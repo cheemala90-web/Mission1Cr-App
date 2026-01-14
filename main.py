@@ -9,25 +9,79 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Fixed", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    .stApp { background-color: #f1f3f6; color: #333333; }
-    .header-box { background: #003366 !important; padding: 30px; border-radius: 15px; border-bottom: 6px solid #ff7043; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-    .header-box h1 { color: #ffffff !important; font-weight: 800; margin: 0; font-size: 34px; letter-spacing: 1px; }
-    .progress-container { background: white; padding: 35px; border-radius: 20px; border: 2px solid #ff7043; margin-bottom: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-    .bar-bg { background: #eeeeee; height: 24px; border-radius: 12px; position: relative; margin-top: 35px; border: 1px solid #ccc; }
-    .bar-fill { background: #2ea043; height: 100%; position: absolute; top: 0; left: 0; border-radius: 12px; transition: width 1.5s ease-in-out; }
-    .marker { position: absolute; top: -55px; transform: translateX(-50%); background: #003366; color: #ffffff; padding: 8px 16px; border-radius: 10px; font-weight: 900; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); white-space: nowrap; z-index: 10; }
-    .stats-card { background: #ffffff; padding: 15px; border-radius: 15px; border: 1px solid #d4af37; text-align: center; height: 140px; box-shadow: 0 3px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
-    .stats-label { color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; }
-    .stats-value { color: #003366; font-size: 20px; font-weight: 900; margin-top: 10px; display: block; }
-    .stats-value-green { color: #2ea043 !important; font-size: 20px; font-weight: 900; margin-top: 10px; display: block; }
-    .stats-value-small { color: #2ea043; font-size: 11px; font-weight: 700; display: block; margin-top: 5px; }
-    .buy-card-ui { background: #f0fdf4; padding: 35px; border-radius: 25px; border: 4px solid #2ea043; margin-bottom: 25px; }
-    .sell-card-ui { background: #fef2f2; padding: 35px; border-radius: 25px; border: 4px solid #f85149; margin-bottom: 25px; }
-    div.stButton > button { background-color: #ff7043 !important; color: white !important; border: none !important; width: 100% !important; font-weight: 900 !important; height: 60px !important; font-size: 20px !important; border-radius: 12px !important; box-shadow: 0 4px 15px rgba(255, 112, 67, 0.4); }
+    /* GLOBAL THEME */
+    .stApp { background-color: #ffffff; color: #000000; }
+    
+    /* HEADER */
+    .header-box { 
+        background: #003366 !important; 
+        padding: 20px; 
+        border-radius: 10px; 
+        border-bottom: 5px solid #ff7043; 
+        text-align: center; 
+        margin-bottom: 20px; 
+    }
+    .header-box h1 { color: white !important; margin: 0; font-size: 28px; }
+
+    /* INPUT FIELDS (Black Border & Text) */
+    .stTextInput label, .stNumberInput label {
+        color: #000000 !important; font-size: 16px !important; font-weight: bold !important;
+    }
+    div[data-baseweb="input"] > div {
+        background-color: #ffffff !important;
+        border: 2px solid #333333 !important; 
+        color: #000000 !important;
+        border-radius: 8px !important;
+    }
+    input[type="text"], input[type="number"] {
+        color: #000000 !important; font-weight: 600 !important;
+    }
+
+    /* BUTTONS */
+    div.stButton > button {
+        background-color: #003366 !important; 
+        color: white !important; 
+        border: none !important; 
+        width: 100% !important; 
+        height: 55px !important;
+        font-size: 18px !important; 
+        font-weight: bold !important;
+        border-radius: 8px !important;
+    }
+    div.stButton > button:hover { background-color: #ff7043 !important; }
+
+    /* CARD STYLES (Always Visible) */
+    .buy-box {
+        border: 4px solid #2ea043; /* Green */
+        padding: 20px;
+        border-radius: 15px;
+        background-color: #f0fdf4;
+        margin-bottom: 20px;
+        min-height: 280px; /* Fixed Height */
+        display: flex; flex-direction: column; justify-content: center;
+    }
+    .sell-box {
+        border: 4px solid #d93025; /* Red */
+        padding: 20px;
+        border-radius: 15px;
+        background-color: #fef2f2;
+        margin-bottom: 20px;
+        min-height: 280px; /* Fixed Height */
+        display: flex; flex-direction: column; justify-content: center;
+    }
+
+    /* METRICS */
+    .stats-card { 
+        background: #f8f9fa; padding: 15px; border: 1px solid #ccc; 
+        border-radius: 10px; text-align: center; margin-bottom: 10px;
+    }
+    .stats-val { color: #003366; font-size: 18px; font-weight: bold; display: block; }
+    .stats-val-green { color: #2ea043; font-size: 18px; font-weight: bold; display: block; }
+    .stats-lbl { color: #555; font-size: 12px; font-weight: bold; text-transform: uppercase; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -43,16 +97,21 @@ try:
     else:
         gc = gspread.service_account(filename="service_key.json")
 except Exception as e:
-    st.error(f"Auth Error: {e}"); st.stop()
+    st.error(f"Config Error: {e}"); st.stop()
 
 if 'auth' not in st.session_state:
-    st.session_state.update({'auth': False, 'sid': None, 'name': None, 'show_welcome': False})
+    st.session_state.update({'auth': False, 'sid': None, 'name': None})
 
+# --- LOGIN SCREEN ---
 if not st.session_state.auth:
-    st.markdown('<div class="header-box"><h1>🚀 MISSION 1 CR | SECURE LOGIN</h1></div>', unsafe_allow_html=True)
-    l_mob = st.text_input("ENTER REGISTERED MOBILE NUMBER")
+    st.markdown('<div class="header-box"><h1>🔒 SECURE LOGIN</h1></div>', unsafe_allow_html=True)
+    st.write("")
+    l_mob = st.text_input("Enter Registered Mobile Number", placeholder="Ex: 9876543210")
+    
     if st.button("UNLOCK TERMINAL"):
-        with st.spinner("Checking..."):
+        if l_mob:
+            msg = st.empty()
+            msg.info("⏳ Verifying Access...")
             try:
                 db_ws = gc.open_by_key(MASTER_ID).worksheet("CLIENT_DB")
                 df_users = pd.DataFrame(db_ws.get_all_records())
@@ -61,14 +120,15 @@ if not st.session_state.auth:
                     st.session_state.auth = True
                     st.session_state.sid = str(user.iloc[0]['Sheet_ID']).strip()
                     st.session_state.name = user.iloc[0]['Client_Name']
-                    st.session_state.show_welcome = True
+                    msg.success("✅ Logged In!")
+                    time.sleep(1)
                     st.rerun()
-                else: st.error("❌ Access Denied.")
-            except Exception as e: st.error(f"Login Error: {e}")
+                else: msg.error("❌ Number Not Found!")
+            except Exception as e: msg.error(f"Error: {e}")
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (DATE FIX V2)
+# 3. DATA ENGINE
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -80,91 +140,68 @@ try:
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
+    # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
     auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
     
+    # Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
     progress_count = len([x for x in k_vals if x.strip() != ""])
     progress_pct = min((progress_count / 457) * 100, 100)
     
+    # Sold Steps
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
-    # --- DATE PARSING FIX ---
+    # AI Logic (Date Fix)
     TARGET_STEPS = 457
     remaining_steps = TARGET_STEPS - sold_steps_count
     
     def strict_date_parse(d_str):
-        # Clean the string
         d_str = str(d_str).strip()
         if not d_str: return None
-        
-        # EXTENSIVE Format List
-        formats = [
-            '%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', # Standard
-            '%d-%b-%Y', '%d %b %Y',             # 12-Jan-2025
-            '%d-%b-%y', '%d %b %y',             # 12-Jan-25
-            '%d.%m.%Y',                         # 12.01.2025
-            '%m/%d/%Y', '%m-%d-%Y',             # US Formats
-            '%Y/%m/%d'                          # ISO Alt
-        ]
-        
+        formats = ['%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', '%d-%b-%Y', '%d %b %Y']
         for fmt in formats:
             try: return datetime.strptime(d_str, fmt).date()
             except: continue
         return None
 
-    # Scan Sold Sheet Col A & B for Earliest Date
     found_dates = []
     if len(s_data) > 4:
         for row in s_data[4:]:
-            # Check Col A (Buy Date)
             if len(row) > 0:
                 d = strict_date_parse(row[0])
                 if d: found_dates.append(d)
-            # Check Col B (Sell Date)
             if len(row) > 1:
                 d = strict_date_parse(row[1])
                 if d: found_dates.append(d)
     
-    # Logic: If dates found, use min. If NOT found, DO NOT use today.
     start_date = min(found_dates) if found_dates else None
-
-    if sold_steps_count > 0:
-        if start_date:
-            days_passed = (date.today() - start_date).days
-            # Safety: If days_passed is 0 or negative (rare bug), set to 1
-            if days_passed < 1: days_passed = 1 
-            
-            velocity = sold_steps_count / days_passed 
-            
-            # Additional Safety: If velocity is suspiciously high (e.g. > 10 trades/day), data is likely wrong
-            if velocity > 10 and days_passed == 1:
-                time_display = "Check Dates"
-                speed_subtext = "Date Format Error (Too Recent)"
-            else:
-                days_needed = remaining_steps / velocity
-                y = int(days_needed // 365)
-                rem = days_needed % 365
-                m = int(rem // 30)
-                d = int(rem % 30)
-                
-                # Convert passed days to Y M D
-                py = int(days_passed // 365)
-                prem = days_passed % 365
-                pm = int(prem // 30)
-                pd = int(prem % 30)
-                passed_str = f"{py}Y {pm}M {pd}D"
-                
-                time_display = f"{y}Y {m}M {d}D"
-                speed_subtext = f"{sold_steps_count} steps in {passed_str}"
+    
+    if sold_steps_count > 0 and start_date:
+        days_passed = (date.today() - start_date).days
+        if days_passed < 1: days_passed = 1
+        vel = sold_steps_count / days_passed
+        
+        # Sanity Check for 0Y issue
+        if vel > 20 and days_passed == 1:
+            time_display = "Check Dates"
+            speed_text = "Date Error"
         else:
-            time_display = "Date Missing"
-            speed_subtext = "Check Sheet Col A"
+            days_req = remaining_steps / vel if vel > 0 else 0
+            y, rem = divmod(days_req, 365)
+            m, d = divmod(rem, 30)
+            
+            py, prem = divmod(days_passed, 365)
+            pm, pd = divmod(prem, 30)
+            
+            time_display = f"{int(y)}Y {int(m)}M {int(d)}D"
+            passed_display = f"{int(py)}Y {int(pm)}M {int(pd)}D"
+            speed_text = f"{sold_steps_count} steps in {passed_display}"
     else:
         time_display = "Start Trading"
-        speed_subtext = "0 Steps Done"
+        speed_text = "0 Steps Done"
 
     col_a = [row[0] for row in h_data]
     h_target_row = 12
@@ -190,90 +227,119 @@ except Exception as e:
 # ==========================================
 st.markdown(f'<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.name.upper()}</h1></div>', unsafe_allow_html=True)
 
-if st.session_state.show_welcome:
-    st.success(f"🎉 Welcome {st.session_state.name}!"); st.balloons(); st.session_state.show_welcome = False
-
+# Progress
 st.markdown(f"""
     <div class="progress-container">
-        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; color: #64748b; margin-bottom: 5px;">
-            <span>Start: ₹ 2L</span>
-            <span>Goal: ₹ 1 Cr</span>
+        <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555;">
+            <span>Start: ₹ 2L</span><span>Goal: ₹ 1 Cr</span>
         </div>
-        <div class="bar-bg">
-            <div class="marker" style="left: {progress_pct}%;">Completed: {progress_count} Steps | ₹ {equity_bal}</div>
-            <div class="bar-fill" style="width: {progress_pct}%;"></div>
+        <div style="background:#eee; height:24px; border-radius:12px; margin-top:10px; position:relative;">
+            <div style="background:#2ea043; width:{progress_pct}%; height:100%; border-radius:12px;"></div>
+            <div style="position:absolute; top:-35px; left:{progress_pct}%; transform:translateX(-50%); background:#003366; color:white; padding:5px 10px; border-radius:5px; font-weight:bold; font-size:12px; white-space:nowrap;">
+                Done: {progress_count} | ₹ {equity_bal}
+            </div>
         </div>
     </div>
+""", unsafe_allow_html=True)
+
+# Metrics
+c1, c2, c3, c4, c5, c6 = st.columns(6)
+p_row = mp_data[1] if len(mp_data) > 1 else []
+metrics = [
+    (c1, "Steps Done", sold_steps_count, "#2ea043"),
+    (c2, "AI Time Left", time_display, "#003366"),
+    (c3, "Monthly P%", p_row[3] if len(p_row)>3 else "0%", "#003366"),
+    (c4, "Steps Left", remaining_steps, "#d93025"),
+    (c5, "Pocket %", p_row[5] if len(p_row)>5 else "0%", "#003366"),
+    (c6, "Annualized", p_row[6] if len(p_row)>6 else "0%", "#003366")
+]
+for col, lbl, val, color in metrics:
+    sub = speed_text if lbl == "AI Time Left" else ""
+    col.markdown(f"""
+        <div class="stats-card">
+            <span class="stats-lbl">{lbl}</span><br>
+            <span class="stats-val" style="color:{color}">{val}</span>
+            <span style="font-size:10px; color:#666;">{sub}</span>
+        </div>
     """, unsafe_allow_html=True)
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-try:
-    p_row = mp_data[1] if len(mp_data) > 1 else []
-    
-    c1.markdown(f'<div class="stats-card"><span class="stats-label">Steps Completed</span><span class="stats-value-green">{sold_steps_count}</span></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="stats-card"><span class="stats-label">AI Time to Goal</span><span class="stats-value">{time_display}</span><span class="stats-value-small">{speed_subtext}</span></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="stats-card"><span class="stats-label">Monthly P%</span><span class="stats-value">{p_row[3] if len(p_row)>3 else "0%"}</span></div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="stats-card"><span class="stats-label">Remaining Steps</span><span class="stats-value">{remaining_steps}</span></div>', unsafe_allow_html=True)
-    c5.markdown(f'<div class="stats-card"><span class="stats-label">From Pocket %</span><span class="stats-value">{p_row[5] if len(p_row)>5 else "0%"}</span></div>', unsafe_allow_html=True)
-    c6.markdown(f'<div class="stats-card"><span class="stats-label">Annualized %</span><span class="stats-value">{p_row[6] if len(p_row)>6 else "0%"}</span></div>', unsafe_allow_html=True)
-except: pass
-
 # ==========================================
-# 5. ACTION TERMINAL
+# 5. ACTION TERMINAL (CARDS ALWAYS VISIBLE)
 # ==========================================
 st.write("---")
+
+is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]
+m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
+s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
+is_sell_active = s_idx is not None
+
 c_buy, c_sell = st.columns(2)
 
+# --- BUY CARD ---
 with c_buy:
-    st.markdown('<div class="buy-card-ui">', unsafe_allow_html=True)
-    if auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]:
-        st.markdown(f"<h2>⚡ BUY SIGNAL</h2>", unsafe_allow_html=True)
+    st.markdown('<div class="buy-box">', unsafe_allow_html=True) # Always Green Box
+    st.markdown(f"<h3 style='color:#2ea043; margin:0; text-align:center;'>⚡ BUY SIGNAL</h3>", unsafe_allow_html=True)
+    st.write("")
+    
+    if is_buy_active:
         with st.form("buy_form"):
-            final_code = st.text_input("NSE Code", value=auto_stock_code)
+            st.markdown(f"**Code:** {auto_stock_code}")
             try: q_val = int(float(auto_qty))
             except: q_val = 0
-            final_qty = st.number_input("Quantity (To Col F)", value=q_val, step=1)
+            final_qty = st.number_input("Confirm Quantity", value=q_val, step=1)
             b_price = st.number_input("Execution Price", format="%.2f")
-            submitted = st.form_submit_button("CONFIRM BUY & DEPLOY")
-            if submitted:
-                with st.spinner("Processing..."):
+            
+            if st.form_submit_button("✅ EXECUTE BUY"):
+                with st.spinner("Saving..."):
                     raw_vals = h_ws.get('O6:T6')[0]
-                    raw_vals[2] = final_code 
+                    raw_vals[2] = auto_stock_code 
                     raw_vals[4] = b_price     
                     raw_vals[5] = final_qty   
                     h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
-                    st_ws.update_cell(ow_row, 10, final_code)
+                    st_ws.update_cell(ow_row, 10, auto_stock_code)
                     st_ws.update_cell(ow_row, 11, b_price)
                     st_ws.update_cell(ow_row, 23, str(date.today()))
-                    st.balloons(); st.success("Buy Executed!"); time.sleep(2); st.rerun()
+                    st.success("Buy Saved!"); time.sleep(1); st.rerun()
     else:
-        st.info("System Scanning for New Signals...")
+        st.markdown("""
+            <div style='text-align:center; padding:20px;'>
+                <h4 style='color:#555;'>✅ Nothing to buy today.</h4>
+                <p style='color:#777;'>Come back tomorrow!</p>
+            </div>
+        """, unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+# --- SELL CARD ---
 with c_sell:
-    m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
-    s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
-    st.markdown('<div class="sell-card-ui">', unsafe_allow_html=True)
-    if s_idx:
+    st.markdown('<div class="sell-box">', unsafe_allow_html=True) # Always Red Box
+    st.markdown(f"<h3 style='color:#d93025; margin:0; text-align:center;'>🔻 SELL SIGNAL</h3>", unsafe_allow_html=True)
+    st.write("")
+    
+    if is_sell_active:
         row_data = h_data[s_idx-1]
-        st.markdown(f"<h2>🔻 SELL ACHIEVED</h2>", unsafe_allow_html=True)
         try: display_qty = int(float(row_data[7])) if len(row_data) > 7 else 0
         except: display_qty = 0
         curr_code = row_data[2] if len(row_data) > 2 else ""
+
         with st.form("sell_form"):
-            st.markdown(f"**NSE Code:** {curr_code}")
-            st.markdown(f"**Quantity (View Only):** {display_qty}")
-            s_price = st.number_input("Final Sell Price", format="%.2f")
-            s_submitted = st.form_submit_button("CONFIRM SELL & BOOK")
-            if s_submitted:
-                with st.spinner("Moving to Sold Sheet..."):
+            st.markdown(f"**Code:** {curr_code}")
+            st.markdown(f"**Holding Qty:** {display_qty}")
+            s_price = st.number_input("Sell Price", format="%.2f")
+            
+            if st.form_submit_button("🚨 BOOK PROFIT"):
+                with st.spinner("Booking..."):
                     live_row = h_ws.row_values(s_idx)[:14]
                     live_row[11] = s_price
                     s_ws.append_row(live_row, value_input_option='USER_ENTERED')
                     h_ws.delete_rows(s_idx)
-                    st.balloons(); st.success(f"Sold! {curr_code} Moved."); time.sleep(2); st.rerun()
+                    st.success("Profit Booked!"); time.sleep(1); st.rerun()
     else:
-        st.info("Monitoring Open Positions...")
+        st.markdown("""
+            <div style='text-align:center; padding:20px;'>
+                <h4 style='color:#555;'>🛡️ No Sells Active.</h4>
+                <p style='color:#777;'>Hold your positions tight!</p>
+            </div>
+        """, unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
