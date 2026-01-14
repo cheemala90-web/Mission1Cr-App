@@ -3,7 +3,6 @@ import gspread
 import pandas as pd
 from datetime import date, datetime
 import time
-import math
 import os
 import json
 
@@ -15,86 +14,22 @@ st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #f1f3f6; color: #333333; }
-    
-    .header-box {
-        background: #003366 !important; 
-        padding: 30px; 
-        border-radius: 15px; 
-        border-bottom: 6px solid #ff7043; 
-        text-align: center; 
-        margin-bottom: 25px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    }
+    .header-box { background: #003366 !important; padding: 30px; border-radius: 15px; border-bottom: 6px solid #ff7043; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
     .header-box h1 { color: #ffffff !important; font-weight: 800; margin: 0; font-size: 34px; letter-spacing: 1px; }
-    
-    label { 
-        color: #000000 !important; 
-        font-weight: 900 !important; 
-        font-size: 16px !important;
-        display: block !important; 
-        margin-bottom: 8px !important;
-    }
-    
-    .stTextInput input, .stNumberInput input {
-        border: 2px solid #003366 !important;
-        background-color: #ffffff !important;
-        color: #000000 !important;
-        height: 50px !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-    }
-
-    /* --- PROGRESS BAR --- */
-    .progress-container {
-        background: white; padding: 35px; border-radius: 20px; 
-        border: 2px solid #ff7043; margin-bottom: 25px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    }
-    .bar-bg { 
-        background: #eeeeee; 
-        height: 24px; 
-        border-radius: 12px; 
-        position: relative; 
-        margin-top: 35px; 
-        border: 1px solid #ccc; 
-    }
-    .bar-fill { 
-        background: #2ea043; 
-        height: 100%; 
-        position: absolute; 
-        top: 0; 
-        left: 0;
-        border-radius: 12px; 
-        transition: width 1.5s ease-in-out; 
-    }
-    
-    .marker {
-        position: absolute; top: -55px; transform: translateX(-50%);
-        background: #003366; color: #ffffff; padding: 8px 16px; border-radius: 10px;
-        font-weight: 900; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        white-space: nowrap; z-index: 10;
-    }
-
-    /* --- STATS CARDS --- */
-    .stats-card { 
-        background: #ffffff; padding: 15px; border-radius: 15px; 
-        border: 1px solid #d4af37; text-align: center; height: 140px; 
-        box-shadow: 0 3px 10px rgba(0,0,0,0.05); margin-bottom: 20px;
-    }
+    label { color: #000000 !important; font-weight: 900 !important; font-size: 16px !important; display: block !important; margin-bottom: 8px !important; }
+    .stTextInput input, .stNumberInput input { border: 2px solid #003366 !important; background-color: #ffffff !important; color: #000000 !important; height: 50px !important; border-radius: 8px !important; font-weight: 600 !important; }
+    .progress-container { background: white; padding: 35px; border-radius: 20px; border: 2px solid #ff7043; margin-bottom: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+    .bar-bg { background: #eeeeee; height: 24px; border-radius: 12px; position: relative; margin-top: 35px; border: 1px solid #ccc; }
+    .bar-fill { background: #2ea043; height: 100%; position: absolute; top: 0; left: 0; border-radius: 12px; transition: width 1.5s ease-in-out; }
+    .marker { position: absolute; top: -55px; transform: translateX(-50%); background: #003366; color: #ffffff; padding: 8px 16px; border-radius: 10px; font-weight: 900; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); white-space: nowrap; z-index: 10; }
+    .stats-card { background: #ffffff; padding: 15px; border-radius: 15px; border: 1px solid #d4af37; text-align: center; height: 140px; box-shadow: 0 3px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
     .stats-label { color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; }
     .stats-value { color: #003366; font-size: 20px; font-weight: 900; margin-top: 10px; display: block; }
     .stats-value-green { color: #2ea043 !important; font-size: 20px; font-weight: 900; margin-top: 10px; display: block; }
     .stats-value-small { color: #2ea043; font-size: 11px; font-weight: 700; display: block; margin-top: 5px; }
-
     .buy-card-ui { background: #f0fdf4; padding: 35px; border-radius: 25px; border: 4px solid #2ea043; margin-bottom: 25px; }
     .sell-card-ui { background: #fef2f2; padding: 35px; border-radius: 25px; border: 4px solid #f85149; margin-bottom: 25px; }
-    
-    div.stButton > button {
-        background-color: #ff7043 !important; color: white !important; border: none !important; 
-        width: 100% !important; font-weight: 900 !important; height: 60px !important;
-        font-size: 20px !important; border-radius: 12px !important;
-        box-shadow: 0 4px 15px rgba(255, 112, 67, 0.4);
-    }
+    div.stButton > button { background-color: #ff7043 !important; color: white !important; border: none !important; width: 100% !important; font-weight: 900 !important; height: 60px !important; font-size: 20px !important; border-radius: 12px !important; box-shadow: 0 4px 15px rgba(255, 112, 67, 0.4); }
     </style>
     """, unsafe_allow_html=True)
 
@@ -135,7 +70,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE
+# 3. DATA ENGINE (SMART DATE FIX)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -151,40 +86,43 @@ try:
     auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
     auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
     
-    # 1. Progress Logic
+    # 1. Progress Logic (K3+)
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
     progress_count = len([x for x in k_vals if x.strip() != ""])
     progress_pct = min((progress_count / 457) * 100, 100)
     
-    # 2. Sold Steps
+    # 2. Sold Steps (Row 5+)
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
-    # 3. AI CALCULATION (Pandas Fix)
+    # --- 3. FIX: PANDAS INTELLIGENT DATE PARSER ---
     TARGET_STEPS = 457
     remaining_steps = TARGET_STEPS - sold_steps_count
     
-    # --- PANDAS DATE FIX START ---
-    try:
-        # Extract dates from Col A (Buy Date)
-        raw_dates = [row[0] for row in s_data[4:] if len(row) > 0 and row[0].strip()]
-        
-        if raw_dates:
-            # Use Pandas to auto-detect format
-            dt_series = pd.to_datetime(raw_dates, dayfirst=True, errors='coerce')
+    start_date = date.today() # Default
+    
+    # Extract Potential Dates from Sold Sheet (Col A, B)
+    # Skipping Header rows (0-3), data starts row 4 (index 4)
+    raw_date_strings = []
+    if len(s_data) > 4:
+        for row in s_data[4:]:
+            # Try Col A (Buy Date) and Col B (Sell Date)
+            if len(row) > 0 and row[0].strip(): raw_date_strings.append(row[0])
+            elif len(row) > 1 and row[1].strip(): raw_date_strings.append(row[1])
+
+    if raw_date_strings:
+        try:
+            # Pandas is smart. It handles '15-Jan-25', '2025-01-15', '15/01/2025' all together.
+            dt_series = pd.to_datetime(raw_date_strings, dayfirst=True, errors='coerce')
             valid_dates = dt_series.dropna()
             
             if not valid_dates.empty:
                 start_date = valid_dates.min().date()
-            else:
-                start_date = date.today()
-        else:
+        except Exception as e:
+            # Fallback if pandas fails
             start_date = date.today()
-            
-    except Exception as e:
-        start_date = date.today()
-    # --- PANDAS DATE FIX END ---
 
+    # Time Calculation Function
     def days_to_ymd(total_days):
         y = int(total_days // 365)
         rem = total_days % 365
@@ -192,10 +130,10 @@ try:
         d = int(rem % 30)
         return f"{y}Y {m}M {d}D"
 
-    # Calculate Velocity & Time
+    # Calculate Logic
     if sold_steps_count > 0:
         days_passed = (date.today() - start_date).days
-        if days_passed < 1: days_passed = 1 # Avoid Zero
+        if days_passed < 1: days_passed = 1 
         
         velocity = sold_steps_count / days_passed 
         
@@ -203,7 +141,7 @@ try:
             days_needed = remaining_steps / velocity
             time_display = days_to_ymd(days_needed)
             
-            # Subtext in Y M D format as requested
+            # Subtext formatted to Y M D
             passed_display = days_to_ymd(days_passed)
             speed_subtext = f"{sold_steps_count} steps in {passed_display}"
         else:
