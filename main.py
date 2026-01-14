@@ -3,31 +3,35 @@ import gspread
 import pandas as pd
 from datetime import date, datetime
 import time
+import math
 import os
+import json
 
-# --- 1. PRO EXECUTIVE STYLING (Blue & Orange Theme) ---
-st.set_page_config(page_title="Mission 1 Cr | Ultimate Professional Terminal", layout="wide")
+# ==========================================
+# 1. PAGE CONFIGURATION & STYLING
+# ==========================================
+st.set_page_config(page_title="Mission 1 Cr | Live Terminal", layout="wide")
 
 st.markdown("""
     <style>
-    /* Professional Background */
     .stApp { background-color: #f1f3f6; color: #333333; }
     
-    /* Header Section - DEEP BLUE Background, WHITE Text */
     .header-box {
-        background: #003366 !important; padding: 25px; border-radius: 15px; 
-        border-bottom: 5px solid #ff7043; text-align: center; margin-bottom: 20px;
+        background: #003366 !important; 
+        padding: 30px; 
+        border-radius: 15px; 
+        border-bottom: 6px solid #ff7043; 
+        text-align: center; 
+        margin-bottom: 25px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
-    .header-box h1 { color: #ffffff !important; font-weight: 800; margin: 0; font-size: 32px; }
-    .quote-text { color: #d1d5db; font-style: italic; font-size: 15px; margin-top: 10px; }
-
-    /* VISIBILITY FIX: Labels for Inputs (BLACK) */
+    .header-box h1 { color: #ffffff !important; font-weight: 800; margin: 0; font-size: 34px; letter-spacing: 1px; }
+    
     label { 
         color: #000000 !important; 
-        font-weight: bold !important; 
+        font-weight: 900 !important; 
         font-size: 16px !important;
-        display: block !important;
+        display: block !important; 
         margin-bottom: 8px !important;
     }
     
@@ -35,201 +39,277 @@ st.markdown("""
         border: 2px solid #003366 !important;
         background-color: #ffffff !important;
         color: #000000 !important;
-        height: 45px !important;
+        height: 50px !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
     }
 
-    /* Progress Wrapper */
     .progress-container {
         background: white; padding: 35px; border-radius: 20px; 
         border: 2px solid #ff7043; margin-bottom: 25px;
         box-shadow: 0 2px 10px rgba(0,0,0,0.05);
     }
-    .bar-bg { background: #eeeeee; height: 22px; border-radius: 11px; position: relative; margin-top: 30px; border: 1px solid #ccc; }
-    .bar-fill { background: #2ea043; height: 100%; border-radius: 10px; transition: 1.5s ease-in-out; }
+    .bar-bg { 
+        background: #eeeeee; height: 24px; border-radius: 12px; 
+        position: relative; margin-top: 35px; border: 1px solid #ccc; 
+    }
+    .bar-fill { 
+        background: #2ea043; height: 100%; position: absolute; 
+        top: 0; left: 0; border-radius: 12px; transition: width 1.5s ease-in-out; 
+    }
     
     .marker {
-        position: absolute; top: -50px; transform: translateX(-50%);
-        background: #003366; color: #ffffff; padding: 6px 15px; border-radius: 10px;
-        font-weight: 900; font-size: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        position: absolute; top: -55px; transform: translateX(-50%);
+        background: #003366; color: #ffffff; padding: 8px 16px; border-radius: 10px;
+        font-weight: 900; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         white-space: nowrap; z-index: 10;
     }
-    .marker::after {
-        content: ''; position: absolute; bottom: -6px; left: 50%;
-        transform: translateX(-50%); border-left: 6px solid transparent; 
-        border-right: 6px solid transparent; border-top: 6px solid #003366;
-    }
 
-    /* Stats Cards */
     .stats-card { 
-        background: #ffffff; padding: 15px; border-radius: 12px; 
-        border: 1px solid #d4af37; text-align: center; height: 120px; 
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px;
+        background: #ffffff; padding: 15px; border-radius: 15px; 
+        border: 1px solid #d4af37; text-align: center; height: 140px; 
+        box-shadow: 0 3px 10px rgba(0,0,0,0.05); margin-bottom: 20px;
     }
-    .stats-label { color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: bold; }
-    .stats-value { color: #003366; font-size: 20px; font-weight: 800; margin-top: 10px; display: block; }
+    .stats-label { color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; }
+    .stats-value { color: #003366; font-size: 20px; font-weight: 900; margin-top: 10px; display: block; }
+    .stats-value-green { color: #2ea043 !important; font-size: 20px; font-weight: 900; margin-top: 10px; display: block; }
+    .stats-value-small { color: #2ea043; font-size: 11px; font-weight: 700; display: block; margin-top: 5px; }
 
-    /* ACTION CARDS (Internal UI) */
-    .buy-card-ui { 
-        background: #f0fdf4; padding: 30px; border-radius: 20px; 
-        border: 4px solid #2ea043; margin-bottom: 20px;
-        box-shadow: 0 4px 12px rgba(46, 160, 67, 0.1);
-    }
-    .sell-card-ui { 
-        background: #fef2f2; padding: 30px; border-radius: 20px; 
-        border: 4px solid #f85149; margin-bottom: 20px;
-        box-shadow: 0 4px 12px rgba(248, 81, 73, 0.1);
-    }
-    .card-title { color: #000000; font-weight: 800; font-size: 26px; margin-bottom: 15px; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; }
-
-    /* UNIFIED ORANGE BUTTONS */
+    .buy-card-ui { background: #f0fdf4; padding: 35px; border-radius: 25px; border: 4px solid #2ea043; margin-bottom: 25px; }
+    .sell-card-ui { background: #fef2f2; padding: 35px; border-radius: 25px; border: 4px solid #f85149; margin-bottom: 25px; }
+    
     div.stButton > button {
         background-color: #ff7043 !important; color: white !important; border: none !important; 
-        width: 100% !important; font-weight: bold !important; height: 55px !important;
-        font-size: 18px !important; border-radius: 12px !important;
-        box-shadow: 0 4px 10px rgba(255, 112, 67, 0.3); transition: 0.3s;
+        width: 100% !important; font-weight: 900 !important; height: 60px !important;
+        font-size: 20px !important; border-radius: 12px !important;
+        box-shadow: 0 4px 15px rgba(255, 112, 67, 0.4);
     }
-    div.stButton > button:hover { transform: scale(1.02); background-color: #f4511e !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATABASE & SESSION ---
+# ==========================================
+# 2. AUTHENTICATION (DEPLOYMENT READY)
+# ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
 
 try:
-    gc = gspread.service_account(filename="service_key.json")
+    # 1. Try Streamlit Cloud Secrets (Best for Deployment)
+    if "SERVICE_ACCOUNT_JSON" in st.secrets:
+        key_dict = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
+        gc = gspread.service_account_from_dict(key_dict)
+    
+    # 2. Try Local File (Best for your PC)
+    else:
+        gc = gspread.service_account(filename="service_key.json")
+        
 except Exception as e:
-    st.error(f"Sync Error: {e}"); st.stop()
-
-if 'auth' not in st.session_state:
-    st.session_state.update({'auth': False, 'sid': None, 'name': None})
-
-# --- 3. LOGIN PAGE ---
-if not st.session_state.auth:
-    st.markdown('<div class="header-box"><h1>🚀 MISSION 1 CR | LOGIN</h1></div>', unsafe_allow_html=True)
-    l_mob = st.text_input("📱 ENTER REGISTERED MOBILE NUMBER", placeholder="Type your registered number...")
-    if st.button("Unlock Terminal"):
-        with st.spinner("Accessing Database..."):
-            db_ws = gc.open_by_key(MASTER_ID).worksheet("CLIENT_DB")
-            df = pd.DataFrame(db_ws.get_all_records())
-            user = df[df['Mobile'].astype(str).str.strip() == l_mob.strip()]
-            if not user.empty:
-                sid = str(user.iloc[0]['Sheet_ID']).strip()
-                if sid != "PENDING":
-                    st.session_state.update({'auth': True, 'sid': sid, 'name': user.iloc[0]['Client_Name']})
-                    st.rerun()
-                else: st.warning("Sheet Pending! Admin needs to link your ID.")
-            else: st.error("User not found.")
+    st.error(f"Auth Config Error: {e}")
+    st.info("Tip: If deploying, add 'SERVICE_ACCOUNT_JSON' to Streamlit Secrets.")
     st.stop()
 
-# --- 4. DYNAMIC DATA FETCH ---
+if 'auth' not in st.session_state:
+    st.session_state.update({'auth': False, 'sid': None, 'name': None, 'show_welcome': False})
+
+if not st.session_state.auth:
+    st.markdown('<div class="header-box"><h1>🚀 MISSION 1 CR | SECURE LOGIN</h1></div>', unsafe_allow_html=True)
+    l_mob = st.text_input("ENTER REGISTERED MOBILE NUMBER")
+    if st.button("UNLOCK TERMINAL"):
+        with st.spinner("Checking..."):
+            try:
+                db_ws = gc.open_by_key(MASTER_ID).worksheet("CLIENT_DB")
+                df_users = pd.DataFrame(db_ws.get_all_records())
+                user = df_users[df_users['Mobile'].astype(str).str.strip() == l_mob.strip()]
+                if not user.empty:
+                    st.session_state.auth = True
+                    st.session_state.sid = str(user.iloc[0]['Sheet_ID']).strip()
+                    st.session_state.name = user.iloc[0]['Client_Name']
+                    st.session_state.show_welcome = True
+                    st.rerun()
+                else: st.error("❌ Access Denied.")
+            except Exception as e: st.error(f"Login Error: {e}")
+    st.stop()
+
+# ==========================================
+# 3. DATA ENGINE
+# ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
     h_ws, s_ws, st_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%")
     mp_ws = sh.worksheet("MONTHLY PERFORMANCE")
 
-    h_all = h_ws.get_all_values()
-    equity_bal = h_ws.acell('A6').value or "0"
-    free_bal = h_ws.get('M6', value_render_option='UNFORMATTED_VALUE')[0][0]
-    inv_age_str = s_ws.acell('Z2').value or "N/A"
+    h_data = h_ws.get_all_values()
+    s_data = s_ws.get_all_values()
+    st_data = st_ws.get_all_values()
+    mp_data = mp_ws.get_all_values()
 
-    # Progress Calculation
-    k_col = st_ws.col_values(11)[2:]
-    done_count = len([x for x in k_col if x.strip() != ""])
-    total_steps = 457
-    progress_pct = min((done_count / total_steps) * 100, 100)
+    equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
+    auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
+    auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
+    
+    # 1. Progress Logic (K3+)
+    k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
+    progress_count = len([x for x in k_vals if x.strip() != ""])
+    progress_pct = min((progress_count / 457) * 100, 100)
+    
+    # 2. Sold Steps (Row 5+)
+    c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
+    sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
-    # AI Time Estimate (Y, M, D)
-    try:
-        age_num = int(''.join(filter(str.isdigit, str(inv_age_str)))) or 1
-        days_p = age_num * 30 if "Month" in str(inv_age_str) else (age_num * 365 if "Year" in str(inv_age_str) else age_num)
-        rem_days = int((total_steps - done_count) / (max(done_count, 1) / max(days_p, 1)))
-        ai_msg = f"{rem_days // 365}Y, {(rem_days % 365) // 30}M, {(rem_days % 365) % 30}D"
-    except: ai_msg = "Calculating..."
+    # 3. AI CALCULATION
+    TARGET_STEPS = 457
+    remaining_steps = TARGET_STEPS - sold_steps_count
+    
+    def try_parse_date(d_str):
+        formats = ['%d-%m-%Y', '%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%b-%Y', '%d.%m.%Y']
+        for fmt in formats:
+            try: return datetime.strptime(str(d_str).strip(), fmt).date()
+            except: continue
+        return None
 
-    # Find Buy Step Index in TRADING STEPS (J Column)
-    j_col_data = st_ws.col_values(10)
-    buy_step_row = 3
-    for i in range(2, len(j_col_data)):
-        if not j_col_data[i].strip():
-            buy_step_row = i + 1; break
-    else: buy_step_row = len(j_col_data) + 1
+    start_date = None
+    if len(s_data) > 4:
+        found_dates = []
+        for row in s_data[4:]:
+            if len(row) > 0 and row[0].strip():
+                parsed = try_parse_date(row[0])
+                if parsed: found_dates.append(parsed)
+            if len(row) > 1 and row[1].strip():
+                parsed = try_parse_date(row[1])
+                if parsed: found_dates.append(parsed)
+        if found_dates: start_date = min(found_dates)
+        else: start_date = date.today()
+
+    def days_to_ymd(total_days):
+        y = int(total_days // 365)
+        rem = total_days % 365
+        m = int(rem // 30)
+        d = int(rem % 30)
+        return f"{y}Y {m}M {d}D"
+
+    if sold_steps_count > 0:
+        days_passed = (date.today() - start_date).days
+        if days_passed < 1: days_passed = 1 
+        velocity = sold_steps_count / days_passed 
+        if velocity > 0:
+            days_needed = remaining_steps / velocity
+            time_display = days_to_ymd(days_needed)
+            passed_display = days_to_ymd(days_passed)
+            speed_subtext = f"{sold_steps_count} steps in {passed_display}"
+        else:
+            time_display = "Start Trading"
+            speed_subtext = "Velocity 0"
+    else:
+        time_display = "Start Trading"
+        speed_subtext = "0 Steps Done"
+
+    col_a = [row[0] for row in h_data]
+    h_target_row = 12
+    for i in range(11, len(col_a)):
+        if not col_a[i].strip():
+            h_target_row = i + 1
+            break
+    else: h_target_row = len(col_a) + 1
+    if h_target_row < 12: h_target_row = 12
+
+    ow_row = 3
+    j_col = [r[9] if len(r) > 9 else "" for r in st_data]
+    for i, val in enumerate(j_col):
+        if i >= 2 and val.strip().isdigit():
+            ow_row = i + 1
+            break
 
 except Exception as e:
     st.error(f"Sync Error: {e}"); st.stop()
 
-# --- 5. DASHBOARD UI ---
-st.markdown(f'''<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.name.upper()}</h1>
-<p class="quote-text">"Patience aur Discipline se hi paisa banega."</p></div>''', unsafe_allow_html=True)
+# ==========================================
+# 4. DASHBOARD UI
+# ==========================================
+st.markdown(f'<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.name.upper()}</h1></div>', unsafe_allow_html=True)
 
-# Progress Bar
+if st.session_state.show_welcome:
+    st.success(f"🎉 Welcome {st.session_state.name}!"); st.balloons(); st.session_state.show_welcome = False
+
 st.markdown(f"""
     <div class="progress-container">
-        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; color: #666;">
-            <span>STEP 1 (₹ 2,00,000)</span><span>STEP {total_steps} (₹ 1,00,00,000)</span>
+        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; color: #64748b; margin-bottom: 5px;">
+            <span>Start: ₹ 2L</span>
+            <span>Goal: ₹ 1 Cr</span>
         </div>
         <div class="bar-bg">
-            <div class="marker" style="left: {progress_pct}%;">Step {done_count}: ₹ {equity_bal}</div>
+            <div class="marker" style="left: {progress_pct}%;">Completed: {progress_count} Steps | ₹ {equity_bal}</div>
             <div class="bar-fill" style="width: {progress_pct}%;"></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-# Metrics Grid (8 Cards)
-c1, c2, c3, c4 = st.columns(4)
-c1.markdown(f'<div class="stats-card"><span class="stats-label">Free Balance (M6)</span><span class="stats-value">₹ {free_bal}</span></div>', unsafe_allow_html=True)
-c2.markdown(f'<div class="stats-card"><span class="stats-label">AI Estimate Time</span><span class="stats-value" style="color:#ff7043;">{ai_msg}</span></div>', unsafe_allow_html=True)
-c3.markdown(f'<div class="stats-card"><span class="stats-label">Avg Cap Used (Monthly)</span><span class="stats-value">{mp_ws.acell("C2").value}</span></div>', unsafe_allow_html=True)
-c4.markdown(f'<div class="stats-card"><span class="stats-label">Monthly P% (D2)</span><span class="stats-value">{mp_ws.acell("D2").value}</span></div>', unsafe_allow_html=True)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
+try:
+    p_row = mp_data[1] if len(mp_data) > 1 else []
+    
+    c1.markdown(f'<div class="stats-card"><span class="stats-label">Steps Completed</span><span class="stats-value-green">{sold_steps_count}</span></div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="stats-card"><span class="stats-label">AI Time to Goal</span><span class="stats-value">{time_display}</span><span class="stats-value-small">{speed_subtext}</span></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="stats-card"><span class="stats-label">Monthly P%</span><span class="stats-value">{p_row[3] if len(p_row)>3 else "0%"}</span></div>', unsafe_allow_html=True)
+    c4.markdown(f'<div class="stats-card"><span class="stats-label">Remaining Steps</span><span class="stats-value">{remaining_steps}</span></div>', unsafe_allow_html=True)
+    c5.markdown(f'<div class="stats-card"><span class="stats-label">From Pocket %</span><span class="stats-value">{p_row[5] if len(p_row)>5 else "0%"}</span></div>', unsafe_allow_html=True)
+    c6.markdown(f'<div class="stats-card"><span class="stats-label">Annualized %</span><span class="stats-value">{p_row[6] if len(p_row)>6 else "0%"}</span></div>', unsafe_allow_html=True)
+except: pass
 
-c5, c6, c7, c8 = st.columns(4)
-c5.markdown(f'<div class="stats-card"><span class="stats-label">Overall P% Max (E2)</span><span class="stats-value">{mp_ws.acell("E2").value}</span></div>', unsafe_allow_html=True)
-c6.markdown(f'<div class="stats-card"><span class="stats-label">P% From Pocket (F2)</span><span class="stats-value">{mp_ws.acell("F2").value}</span></div>', unsafe_allow_html=True)
-c7.markdown(f'<div class="stats-card"><span class="stats-label">Annualized % (G2)</span><span class="stats-value">{mp_ws.acell("G2").value}</span></div>', unsafe_allow_html=True)
-c8.markdown(f'<div class="stats-card"><span class="stats-label">Sold Steps Done</span><span class="stats-value" style="color:green;">{len([x for x in s_ws.col_values(3)[4:] if x.strip()])} BOOKED</span></div>', unsafe_allow_html=True)
-
-# --- 6. TERMINAL ACTIONS ---
+# ==========================================
+# 5. ACTION TERMINAL
+# ==========================================
 st.write("---")
-col_buy, col_sell = st.columns(2)
+c_buy, c_sell = st.columns(2)
 
-with col_buy:
-    buy_stock = h_ws.acell('Q6').value
+with c_buy:
     st.markdown('<div class="buy-card-ui">', unsafe_allow_html=True)
-    if buy_stock and buy_stock.strip() not in ["", "0", "#N/A"]:
-        st.markdown(f'<div class="card-title">⚡ BUY SIGNAL: {buy_stock}</div>', unsafe_allow_html=True)
-        b_price = st.number_input("Enter Execution Price", key="buy_internal", format="%.2f")
-        if st.button("CONFIRM BUY TRANSACTION"):
-            with st.spinner("Executing Trade..."):
-                # 1. HOLDING: O6:T6 to Column A (Next Blank)
-                buy_data = h_ws.get('O6:T6')[0]
-                if len(buy_data) >= 5: buy_data[4] = b_price 
-                h_ws.append_row(buy_data, value_input_option='USER_ENTERED')
-                # 2. TRADING STEPS: J=Code, K=Price, W=Date
-                st_ws.update_cell(buy_step_row, 10, buy_stock) # J
-                st_ws.update_cell(buy_step_row, 11, b_price)   # K
-                st_ws.update_cell(buy_step_row, 23, str(date.today())) # W
-                st.balloons(); time.sleep(1.5); st.rerun()
+    if auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]:
+        st.markdown(f"<h2>⚡ BUY SIGNAL</h2>", unsafe_allow_html=True)
+        with st.form("buy_form"):
+            final_code = st.text_input("NSE Code", value=auto_stock_code)
+            try: q_val = int(float(auto_qty))
+            except: q_val = 0
+            final_qty = st.number_input("Quantity (To Col F)", value=q_val, step=1)
+            b_price = st.number_input("Execution Price", format="%.2f")
+            submitted = st.form_submit_button("CONFIRM BUY & DEPLOY")
+            if submitted:
+                with st.spinner("Processing..."):
+                    raw_vals = h_ws.get('O6:T6')[0]
+                    raw_vals[2] = final_code 
+                    raw_vals[4] = b_price     
+                    raw_vals[5] = final_qty   
+                    h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
+                    st_ws.update_cell(ow_row, 10, final_code)
+                    st_ws.update_cell(ow_row, 11, b_price)
+                    st_ws.update_cell(ow_row, 23, str(date.today()))
+                    st.balloons(); st.success("Buy Executed!"); time.sleep(2); st.rerun()
     else:
-        st.markdown('<div class="card-title">🔍 SCANNING</div>', unsafe_allow_html=True)
-        st.info("Market Scanning... No Active Signal Today.")
+        st.info("System Scanning for New Signals...")
     st.markdown('</div>', unsafe_allow_html=True)
 
-with col_sell:
-    m_col = h_ws.col_values(13)[11:]
-    sell_idx = next((i + 12 for i, v in enumerate(m_col) if v.strip()), None)
+with c_sell:
+    m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
+    s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
     st.markdown('<div class="sell-card-ui">', unsafe_allow_html=True)
-    if sell_idx:
-        current_row_data = h_all[sell_idx-1]
-        s_name = current_row_data[2] # Column C
-        st.markdown(f'<div class="card-title">🔻 SELL SIGNAL: {s_name}</div>', unsafe_allow_html=True)
-        s_price = st.number_input("Enter Final Sell Price", key="sell_internal", format="%.2f")
-        if st.button("CONFIRM SELL TRANSACTION"):
-            with st.spinner("Moving to SOLD..."):
-                sell_row = current_row_data[0:14] # A to N
-                if len(sell_row) >= 12: sell_row[11] = s_price # L update
-                s_ws.append_row(sell_row, value_input_option='USER_ENTERED')
-                h_ws.delete_rows(sell_idx)
-                st.success(f"{s_name} Sold!"); time.sleep(1.5); st.rerun()
+    if s_idx:
+        row_data = h_data[s_idx-1]
+        st.markdown(f"<h2>🔻 SELL ACHIEVED</h2>", unsafe_allow_html=True)
+        try: display_qty = int(float(row_data[7])) if len(row_data) > 7 else 0
+        except: display_qty = 0
+        curr_code = row_data[2] if len(row_data) > 2 else ""
+        with st.form("sell_form"):
+            st.markdown(f"**NSE Code:** {curr_code}")
+            st.markdown(f"**Quantity (View Only):** {display_qty}")
+            s_price = st.number_input("Final Sell Price", format="%.2f")
+            s_submitted = st.form_submit_button("CONFIRM SELL & BOOK")
+            if s_submitted:
+                with st.spinner("Moving to Sold Sheet..."):
+                    live_row = h_ws.row_values(s_idx)[:14]
+                    live_row[11] = s_price
+                    s_ws.append_row(live_row, value_input_option='USER_ENTERED')
+                    h_ws.delete_rows(s_idx)
+                    st.balloons(); st.success(f"Sold! {curr_code} Moved."); time.sleep(2); st.rerun()
     else:
-        st.markdown('<div class="card-title">🔻 MONITORING</div>', unsafe_allow_html=True)
-        st.info("No targets hit yet. Monitoring open positions...")
+        st.info("Monitoring Open Positions...")
     st.markdown('</div>', unsafe_allow_html=True)
+
+st.caption(f"Terminal Active | User: {st.session_state.name}")
