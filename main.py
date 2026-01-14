@@ -10,7 +10,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live Terminal", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
 
 st.markdown("""
     <style>
@@ -44,18 +44,28 @@ st.markdown("""
         font-weight: 600 !important;
     }
 
+    /* --- PROGRESS BAR --- */
     .progress-container {
         background: white; padding: 35px; border-radius: 20px; 
         border: 2px solid #ff7043; margin-bottom: 25px;
         box-shadow: 0 2px 10px rgba(0,0,0,0.05);
     }
     .bar-bg { 
-        background: #eeeeee; height: 24px; border-radius: 12px; 
-        position: relative; margin-top: 35px; border: 1px solid #ccc; 
+        background: #eeeeee; 
+        height: 24px; 
+        border-radius: 12px; 
+        position: relative; 
+        margin-top: 35px; 
+        border: 1px solid #ccc; 
     }
     .bar-fill { 
-        background: #2ea043; height: 100%; position: absolute; 
-        top: 0; left: 0; border-radius: 12px; transition: width 1.5s ease-in-out; 
+        background: #2ea043; 
+        height: 100%; 
+        position: absolute; 
+        top: 0; 
+        left: 0;
+        border-radius: 12px; 
+        transition: width 1.5s ease-in-out; 
     }
     
     .marker {
@@ -65,6 +75,7 @@ st.markdown("""
         white-space: nowrap; z-index: 10;
     }
 
+    /* --- STATS CARDS --- */
     .stats-card { 
         background: #ffffff; padding: 15px; border-radius: 15px; 
         border: 1px solid #d4af37; text-align: center; height: 140px; 
@@ -88,24 +99,18 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION (DEPLOYMENT READY)
+# 2. AUTHENTICATION
 # ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
 
 try:
-    # 1. Try Streamlit Cloud Secrets (Best for Deployment)
     if "SERVICE_ACCOUNT_JSON" in st.secrets:
         key_dict = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
         gc = gspread.service_account_from_dict(key_dict)
-    
-    # 2. Try Local File (Best for your PC)
     else:
         gc = gspread.service_account(filename="service_key.json")
-        
 except Exception as e:
-    st.error(f"Auth Config Error: {e}")
-    st.info("Tip: If deploying, add 'SERVICE_ACCOUNT_JSON' to Streamlit Secrets.")
-    st.stop()
+    st.error(f"Auth Error: {e}"); st.stop()
 
 if 'auth' not in st.session_state:
     st.session_state.update({'auth': False, 'sid': None, 'name': None, 'show_welcome': False})
@@ -146,38 +151,39 @@ try:
     auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
     auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
     
-    # 1. Progress Logic (K3+)
+    # 1. Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
     progress_count = len([x for x in k_vals if x.strip() != ""])
     progress_pct = min((progress_count / 457) * 100, 100)
     
-    # 2. Sold Steps (Row 5+)
+    # 2. Sold Steps
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
-    # 3. AI CALCULATION
+    # 3. AI CALCULATION (Pandas Fix)
     TARGET_STEPS = 457
     remaining_steps = TARGET_STEPS - sold_steps_count
     
-    def try_parse_date(d_str):
-        formats = ['%d-%m-%Y', '%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%b-%Y', '%d.%m.%Y']
-        for fmt in formats:
-            try: return datetime.strptime(str(d_str).strip(), fmt).date()
-            except: continue
-        return None
-
-    start_date = None
-    if len(s_data) > 4:
-        found_dates = []
-        for row in s_data[4:]:
-            if len(row) > 0 and row[0].strip():
-                parsed = try_parse_date(row[0])
-                if parsed: found_dates.append(parsed)
-            if len(row) > 1 and row[1].strip():
-                parsed = try_parse_date(row[1])
-                if parsed: found_dates.append(parsed)
-        if found_dates: start_date = min(found_dates)
-        else: start_date = date.today()
+    # --- PANDAS DATE FIX START ---
+    try:
+        # Extract dates from Col A (Buy Date)
+        raw_dates = [row[0] for row in s_data[4:] if len(row) > 0 and row[0].strip()]
+        
+        if raw_dates:
+            # Use Pandas to auto-detect format
+            dt_series = pd.to_datetime(raw_dates, dayfirst=True, errors='coerce')
+            valid_dates = dt_series.dropna()
+            
+            if not valid_dates.empty:
+                start_date = valid_dates.min().date()
+            else:
+                start_date = date.today()
+        else:
+            start_date = date.today()
+            
+    except Exception as e:
+        start_date = date.today()
+    # --- PANDAS DATE FIX END ---
 
     def days_to_ymd(total_days):
         y = int(total_days // 365)
@@ -186,13 +192,18 @@ try:
         d = int(rem % 30)
         return f"{y}Y {m}M {d}D"
 
+    # Calculate Velocity & Time
     if sold_steps_count > 0:
         days_passed = (date.today() - start_date).days
-        if days_passed < 1: days_passed = 1 
+        if days_passed < 1: days_passed = 1 # Avoid Zero
+        
         velocity = sold_steps_count / days_passed 
+        
         if velocity > 0:
             days_needed = remaining_steps / velocity
             time_display = days_to_ymd(days_needed)
+            
+            # Subtext in Y M D format as requested
             passed_display = days_to_ymd(days_passed)
             speed_subtext = f"{sold_steps_count} steps in {passed_display}"
         else:
