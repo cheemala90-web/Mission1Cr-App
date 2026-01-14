@@ -9,33 +9,34 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live Terminal", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Final UI", layout="wide")
 
 st.markdown("""
     <style>
-    /* GLOBAL THEME */
+    /* GLOBAL RESET */
     .stApp { background-color: #ffffff; color: #000000; }
     
     /* HEADER */
     .header-box { 
         background: #003366 !important; 
         padding: 20px; 
-        border-radius: 10px; 
+        border-radius: 12px; 
         border-bottom: 5px solid #ff7043; 
         text-align: center; 
-        margin-bottom: 20px; 
+        margin-bottom: 30px; 
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .header-box h1 { color: white !important; margin: 0; font-size: 28px; }
+    .header-box h1 { color: white !important; margin: 0; font-size: 26px; letter-spacing: 1px; }
 
-    /* INPUT FIELDS (Black Border & Text) */
+    /* INPUT FIELDS (High Contrast Black) */
     .stTextInput label, .stNumberInput label {
-        color: #000000 !important; font-size: 16px !important; font-weight: bold !important;
+        color: #000000 !important; font-size: 14px !important; font-weight: bold !important;
     }
     div[data-baseweb="input"] > div {
         background-color: #ffffff !important;
         border: 2px solid #333333 !important; 
         color: #000000 !important;
-        border-radius: 8px !important;
+        border-radius: 6px !important;
     }
     input[type="text"], input[type="number"] {
         color: #000000 !important; font-weight: 600 !important;
@@ -47,41 +48,36 @@ st.markdown("""
         color: white !important; 
         border: none !important; 
         width: 100% !important; 
-        height: 55px !important;
+        height: 50px !important;
         font-size: 18px !important; 
         font-weight: bold !important;
         border-radius: 8px !important;
+        margin-top: 10px;
     }
     div.stButton > button:hover { background-color: #ff7043 !important; }
 
-    /* CARD STYLES (Always Visible) */
-    .buy-box {
-        border: 4px solid #2ea043; /* Green */
-        padding: 20px;
-        border-radius: 15px;
-        background-color: #f0fdf4;
-        margin-bottom: 20px;
-        min-height: 280px; /* Fixed Height */
-        display: flex; flex-direction: column; justify-content: center;
+    /* PROGRESS BAR */
+    .prog-container {
+        padding: 20px; 
+        background: white; 
+        border: 1px solid #ccc; 
+        border-radius: 12px;
+        margin-bottom: 30px;
     }
-    .sell-box {
-        border: 4px solid #d93025; /* Red */
-        padding: 20px;
-        border-radius: 15px;
-        background-color: #fef2f2;
-        margin-bottom: 20px;
-        min-height: 280px; /* Fixed Height */
-        display: flex; flex-direction: column; justify-content: center;
-    }
-
-    /* METRICS */
+    
+    /* STATS CARDS */
     .stats-card { 
-        background: #f8f9fa; padding: 15px; border: 1px solid #ccc; 
-        border-radius: 10px; text-align: center; margin-bottom: 10px;
+        background: #f8f9fa; 
+        padding: 15px; 
+        border: 1px solid #ddd; 
+        border-radius: 10px; 
+        text-align: center; 
+        margin-bottom: 15px;
     }
-    .stats-val { color: #003366; font-size: 18px; font-weight: bold; display: block; }
-    .stats-val-green { color: #2ea043; font-size: 18px; font-weight: bold; display: block; }
-    .stats-lbl { color: #555; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+    .stats-lbl { color: #666; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+    .stats-val { color: #003366; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
+    .stats-val-green { color: #2ea043; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
+    .stats-sub { font-size: 10px; color: #777; margin-top: 2px; display: block; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -111,7 +107,7 @@ if not st.session_state.auth:
     if st.button("UNLOCK TERMINAL"):
         if l_mob:
             msg = st.empty()
-            msg.info("⏳ Verifying Access...")
+            msg.info("⏳ Connecting...")
             try:
                 db_ws = gc.open_by_key(MASTER_ID).worksheet("CLIENT_DB")
                 df_users = pd.DataFrame(db_ws.get_all_records())
@@ -120,7 +116,7 @@ if not st.session_state.auth:
                     st.session_state.auth = True
                     st.session_state.sid = str(user.iloc[0]['Sheet_ID']).strip()
                     st.session_state.name = user.iloc[0]['Client_Name']
-                    msg.success("✅ Logged In!")
+                    msg.success("✅ Access Granted!")
                     time.sleep(1)
                     st.rerun()
                 else: msg.error("❌ Number Not Found!")
@@ -150,58 +146,51 @@ try:
     progress_count = len([x for x in k_vals if x.strip() != ""])
     progress_pct = min((progress_count / 457) * 100, 100)
     
-    # Sold Steps
+    # Sold Steps Count
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
-    # AI Logic (Date Fix)
+    # AI Logic (Pandas Fix)
     TARGET_STEPS = 457
     remaining_steps = TARGET_STEPS - sold_steps_count
     
-    def strict_date_parse(d_str):
-        d_str = str(d_str).strip()
-        if not d_str: return None
-        formats = ['%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', '%d-%b-%Y', '%d %b %Y']
-        for fmt in formats:
-            try: return datetime.strptime(d_str, fmt).date()
-            except: continue
-        return None
-
-    found_dates = []
+    start_date = date.today()
+    
+    # Extract Dates
+    raw_dates = []
     if len(s_data) > 4:
         for row in s_data[4:]:
-            if len(row) > 0:
-                d = strict_date_parse(row[0])
-                if d: found_dates.append(d)
-            if len(row) > 1:
-                d = strict_date_parse(row[1])
-                if d: found_dates.append(d)
-    
-    start_date = min(found_dates) if found_dates else None
-    
-    if sold_steps_count > 0 and start_date:
+            if len(row) > 0 and row[0].strip(): raw_dates.append(row[0])
+            if len(row) > 1 and row[1].strip(): raw_dates.append(row[1])
+            
+    if raw_dates:
+        try:
+            # Pandas Auto-detect
+            dt_index = pd.to_datetime(raw_dates, dayfirst=True, errors='coerce')
+            valid_dates = dt_index.dropna()
+            if not valid_dates.empty:
+                start_date = valid_dates.min().date()
+        except: pass
+
+    # Time Calculation
+    if sold_steps_count > 0:
         days_passed = (date.today() - start_date).days
         if days_passed < 1: days_passed = 1
-        vel = sold_steps_count / days_passed
         
-        # Sanity Check for 0Y issue
-        if vel > 20 and days_passed == 1:
-            time_display = "Check Dates"
-            speed_text = "Date Error"
-        else:
-            days_req = remaining_steps / vel if vel > 0 else 0
-            y, rem = divmod(days_req, 365)
-            m, d = divmod(rem, 30)
-            
-            py, prem = divmod(days_passed, 365)
-            pm, pd = divmod(prem, 30)
-            
-            time_display = f"{int(y)}Y {int(m)}M {int(d)}D"
-            passed_display = f"{int(py)}Y {int(pm)}M {int(pd)}D"
-            speed_text = f"{sold_steps_count} steps in {passed_display}"
+        velocity = sold_steps_count / days_passed
+        
+        days_req = remaining_steps / velocity if velocity > 0 else 0
+        y, rem = divmod(days_req, 365)
+        m, d = divmod(rem, 30)
+        time_display = f"{int(y)}Y {int(m)}M {int(d)}D"
+        
+        py, prem = divmod(days_passed, 365)
+        pm, pd = divmod(prem, 30)
+        passed_str = f"{int(py)}Y {int(pm)}M {int(pd)}D"
+        speed_text = f"{sold_steps_count} steps in {passed_str}"
     else:
         time_display = "Start Trading"
-        speed_text = "0 Steps Done"
+        speed_text = "0 Steps Completed"
 
     col_a = [row[0] for row in h_data]
     h_target_row = 12
@@ -227,15 +216,15 @@ except Exception as e:
 # ==========================================
 st.markdown(f'<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.name.upper()}</h1></div>', unsafe_allow_html=True)
 
-# Progress
+# Progress Bar
 st.markdown(f"""
-    <div class="progress-container">
-        <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555;">
+    <div class="prog-container">
+        <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555; margin-bottom:10px;">
             <span>Start: ₹ 2L</span><span>Goal: ₹ 1 Cr</span>
         </div>
-        <div style="background:#eee; height:24px; border-radius:12px; margin-top:10px; position:relative;">
+        <div style="background:#eee; height:24px; border-radius:12px; position:relative;">
             <div style="background:#2ea043; width:{progress_pct}%; height:100%; border-radius:12px;"></div>
-            <div style="position:absolute; top:-35px; left:{progress_pct}%; transform:translateX(-50%); background:#003366; color:white; padding:5px 10px; border-radius:5px; font-weight:bold; font-size:12px; white-space:nowrap;">
+            <div style="position:absolute; top:-38px; left:{progress_pct}%; transform:translateX(-50%); background:#003366; color:white; padding:5px 10px; border-radius:6px; font-weight:bold; font-size:12px; white-space:nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
                 Done: {progress_count} | ₹ {equity_bal}
             </div>
         </div>
@@ -246,25 +235,27 @@ st.markdown(f"""
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 p_row = mp_data[1] if len(mp_data) > 1 else []
 metrics = [
-    (c1, "Steps Done", sold_steps_count, "#2ea043"),
-    (c2, "AI Time Left", time_display, "#003366"),
-    (c3, "Monthly P%", p_row[3] if len(p_row)>3 else "0%", "#003366"),
-    (c4, "Steps Left", remaining_steps, "#d93025"),
-    (c5, "Pocket %", p_row[5] if len(p_row)>5 else "0%", "#003366"),
-    (c6, "Annualized", p_row[6] if len(p_row)>6 else "0%", "#003366")
+    (c1, "Steps Completed", sold_steps_count, "green"),
+    (c2, "AI Time Left", time_display, "blue"),
+    (c3, "Monthly P%", p_row[3] if len(p_row)>3 else "0%", "blue"),
+    (c4, "Remaining Steps", remaining_steps, "red"),
+    (c5, "Pocket %", p_row[5] if len(p_row)>5 else "0%", "blue"),
+    (c6, "Annualized", p_row[6] if len(p_row)>6 else "0%", "blue")
 ]
-for col, lbl, val, color in metrics:
+
+for col, lbl, val, color_type in metrics:
+    color = "#2ea043" if color_type == "green" else ("#d93025" if color_type == "red" else "#003366")
     sub = speed_text if lbl == "AI Time Left" else ""
     col.markdown(f"""
         <div class="stats-card">
             <span class="stats-lbl">{lbl}</span><br>
             <span class="stats-val" style="color:{color}">{val}</span>
-            <span style="font-size:10px; color:#666;">{sub}</span>
+            <span class="stats-sub">{sub}</span>
         </div>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 5. ACTION TERMINAL (CARDS ALWAYS VISIBLE)
+# 5. ACTION TERMINAL (BOXES ALWAYS VISIBLE)
 # ==========================================
 st.write("---")
 
@@ -277,69 +268,59 @@ c_buy, c_sell = st.columns(2)
 
 # --- BUY CARD ---
 with c_buy:
-    st.markdown('<div class="buy-box">', unsafe_allow_html=True) # Always Green Box
-    st.markdown(f"<h3 style='color:#2ea043; margin:0; text-align:center;'>⚡ BUY SIGNAL</h3>", unsafe_allow_html=True)
-    st.write("")
-    
-    if is_buy_active:
-        with st.form("buy_form"):
-            st.markdown(f"**Code:** {auto_stock_code}")
-            try: q_val = int(float(auto_qty))
-            except: q_val = 0
-            final_qty = st.number_input("Confirm Quantity", value=q_val, step=1)
-            b_price = st.number_input("Execution Price", format="%.2f")
-            
-            if st.form_submit_button("✅ EXECUTE BUY"):
-                with st.spinner("Saving..."):
-                    raw_vals = h_ws.get('O6:T6')[0]
-                    raw_vals[2] = auto_stock_code 
-                    raw_vals[4] = b_price     
-                    raw_vals[5] = final_qty   
-                    h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
-                    st_ws.update_cell(ow_row, 10, auto_stock_code)
-                    st_ws.update_cell(ow_row, 11, b_price)
-                    st_ws.update_cell(ow_row, 23, str(date.today()))
-                    st.success("Buy Saved!"); time.sleep(1); st.rerun()
-    else:
-        st.markdown("""
-            <div style='text-align:center; padding:20px;'>
-                <h4 style='color:#555;'>✅ Nothing to buy today.</h4>
-                <p style='color:#777;'>Come back tomorrow!</p>
-            </div>
-        """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Use Container with Border -> Ensures Form stays INSIDE
+    with st.container(border=True):
+        st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY SIGNAL</h3>", unsafe_allow_html=True)
+        st.write("") # Spacer
+        
+        if is_buy_active:
+            with st.form("buy_form"):
+                st.markdown(f"**Stock:** {auto_stock_code}")
+                try: q_val = int(float(auto_qty))
+                except: q_val = 0
+                final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
+                b_price = st.number_input("Exec Price", format="%.2f")
+                
+                if st.form_submit_button("✅ EXECUTE BUY"):
+                    with st.spinner("Saving..."):
+                        raw_vals = h_ws.get('O6:T6')[0]
+                        raw_vals[2] = auto_stock_code 
+                        raw_vals[4] = b_price     
+                        raw_vals[5] = final_qty   
+                        h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
+                        st_ws.update_cell(ow_row, 10, auto_stock_code)
+                        st_ws.update_cell(ow_row, 11, b_price)
+                        st_ws.update_cell(ow_row, 23, str(date.today()))
+                        st.success("Buy Saved!"); time.sleep(1); st.rerun()
+        else:
+            st.info("Nothing to buy today. Come back tomorrow!")
 
 # --- SELL CARD ---
 with c_sell:
-    st.markdown('<div class="sell-box">', unsafe_allow_html=True) # Always Red Box
-    st.markdown(f"<h3 style='color:#d93025; margin:0; text-align:center;'>🔻 SELL SIGNAL</h3>", unsafe_allow_html=True)
-    st.write("")
-    
-    if is_sell_active:
-        row_data = h_data[s_idx-1]
-        try: display_qty = int(float(row_data[7])) if len(row_data) > 7 else 0
-        except: display_qty = 0
-        curr_code = row_data[2] if len(row_data) > 2 else ""
+    # Use Container with Border -> Ensures Form stays INSIDE
+    with st.container(border=True):
+        st.markdown(f"<h3 style='color:#d93025; margin-top:0; text-align:center;'>🔻 SELL SIGNAL</h3>", unsafe_allow_html=True)
+        st.write("") # Spacer
+        
+        if is_sell_active:
+            row_data = h_data[s_idx-1]
+            try: display_qty = int(float(row_data[7])) if len(row_data) > 7 else 0
+            except: display_qty = 0
+            curr_code = row_data[2] if len(row_data) > 2 else ""
 
-        with st.form("sell_form"):
-            st.markdown(f"**Code:** {curr_code}")
-            st.markdown(f"**Holding Qty:** {display_qty}")
-            s_price = st.number_input("Sell Price", format="%.2f")
-            
-            if st.form_submit_button("🚨 BOOK PROFIT"):
-                with st.spinner("Booking..."):
-                    live_row = h_ws.row_values(s_idx)[:14]
-                    live_row[11] = s_price
-                    s_ws.append_row(live_row, value_input_option='USER_ENTERED')
-                    h_ws.delete_rows(s_idx)
-                    st.success("Profit Booked!"); time.sleep(1); st.rerun()
-    else:
-        st.markdown("""
-            <div style='text-align:center; padding:20px;'>
-                <h4 style='color:#555;'>🛡️ No Sells Active.</h4>
-                <p style='color:#777;'>Hold your positions tight!</p>
-            </div>
-        """, unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+            with st.form("sell_form"):
+                st.markdown(f"**Stock:** {curr_code}")
+                st.markdown(f"**Holding:** {display_qty}")
+                s_price = st.number_input("Sell Price", format="%.2f")
+                
+                if st.form_submit_button("🚨 BOOK PROFIT"):
+                    with st.spinner("Booking..."):
+                        live_row = h_ws.row_values(s_idx)[:14]
+                        live_row[11] = s_price
+                        s_ws.append_row(live_row, value_input_option='USER_ENTERED')
+                        h_ws.delete_rows(s_idx)
+                        st.success("Profit Booked!"); time.sleep(1); st.rerun()
+        else:
+            st.info("No Active Sells. Hold your positions.")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
