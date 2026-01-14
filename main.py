@@ -9,15 +9,13 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Fixed", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background-color: #f1f3f6; color: #333333; }
     .header-box { background: #003366 !important; padding: 30px; border-radius: 15px; border-bottom: 6px solid #ff7043; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
     .header-box h1 { color: #ffffff !important; font-weight: 800; margin: 0; font-size: 34px; letter-spacing: 1px; }
-    label { color: #000000 !important; font-weight: 900 !important; font-size: 16px !important; display: block !important; margin-bottom: 8px !important; }
-    .stTextInput input, .stNumberInput input { border: 2px solid #003366 !important; background-color: #ffffff !important; color: #000000 !important; height: 50px !important; border-radius: 8px !important; font-weight: 600 !important; }
     .progress-container { background: white; padding: 35px; border-radius: 20px; border: 2px solid #ff7043; margin-bottom: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
     .bar-bg { background: #eeeeee; height: 24px; border-radius: 12px; position: relative; margin-top: 35px; border: 1px solid #ccc; }
     .bar-fill { background: #2ea043; height: 100%; position: absolute; top: 0; left: 0; border-radius: 12px; transition: width 1.5s ease-in-out; }
@@ -70,7 +68,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (SMART DATE FIX)
+# 3. DATA ENGINE (DATE FIX V2)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -86,67 +84,84 @@ try:
     auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
     auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
     
-    # 1. Progress Logic (K3+)
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
     progress_count = len([x for x in k_vals if x.strip() != ""])
     progress_pct = min((progress_count / 457) * 100, 100)
     
-    # 2. Sold Steps (Row 5+)
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
-    # --- 3. FIX: PANDAS INTELLIGENT DATE PARSER ---
+    # --- DATE PARSING FIX ---
     TARGET_STEPS = 457
     remaining_steps = TARGET_STEPS - sold_steps_count
     
-    start_date = date.today() # Default
-    
-    # Extract Potential Dates from Sold Sheet (Col A, B)
-    # Skipping Header rows (0-3), data starts row 4 (index 4)
-    raw_date_strings = []
+    def strict_date_parse(d_str):
+        # Clean the string
+        d_str = str(d_str).strip()
+        if not d_str: return None
+        
+        # EXTENSIVE Format List
+        formats = [
+            '%d-%m-%Y', '%d/%m/%Y', '%Y-%m-%d', # Standard
+            '%d-%b-%Y', '%d %b %Y',             # 12-Jan-2025
+            '%d-%b-%y', '%d %b %y',             # 12-Jan-25
+            '%d.%m.%Y',                         # 12.01.2025
+            '%m/%d/%Y', '%m-%d-%Y',             # US Formats
+            '%Y/%m/%d'                          # ISO Alt
+        ]
+        
+        for fmt in formats:
+            try: return datetime.strptime(d_str, fmt).date()
+            except: continue
+        return None
+
+    # Scan Sold Sheet Col A & B for Earliest Date
+    found_dates = []
     if len(s_data) > 4:
         for row in s_data[4:]:
-            # Try Col A (Buy Date) and Col B (Sell Date)
-            if len(row) > 0 and row[0].strip(): raw_date_strings.append(row[0])
-            elif len(row) > 1 and row[1].strip(): raw_date_strings.append(row[1])
+            # Check Col A (Buy Date)
+            if len(row) > 0:
+                d = strict_date_parse(row[0])
+                if d: found_dates.append(d)
+            # Check Col B (Sell Date)
+            if len(row) > 1:
+                d = strict_date_parse(row[1])
+                if d: found_dates.append(d)
+    
+    # Logic: If dates found, use min. If NOT found, DO NOT use today.
+    start_date = min(found_dates) if found_dates else None
 
-    if raw_date_strings:
-        try:
-            # Pandas is smart. It handles '15-Jan-25', '2025-01-15', '15/01/2025' all together.
-            dt_series = pd.to_datetime(raw_date_strings, dayfirst=True, errors='coerce')
-            valid_dates = dt_series.dropna()
-            
-            if not valid_dates.empty:
-                start_date = valid_dates.min().date()
-        except Exception as e:
-            # Fallback if pandas fails
-            start_date = date.today()
-
-    # Time Calculation Function
-    def days_to_ymd(total_days):
-        y = int(total_days // 365)
-        rem = total_days % 365
-        m = int(rem // 30)
-        d = int(rem % 30)
-        return f"{y}Y {m}M {d}D"
-
-    # Calculate Logic
     if sold_steps_count > 0:
-        days_passed = (date.today() - start_date).days
-        if days_passed < 1: days_passed = 1 
-        
-        velocity = sold_steps_count / days_passed 
-        
-        if velocity > 0:
-            days_needed = remaining_steps / velocity
-            time_display = days_to_ymd(days_needed)
+        if start_date:
+            days_passed = (date.today() - start_date).days
+            # Safety: If days_passed is 0 or negative (rare bug), set to 1
+            if days_passed < 1: days_passed = 1 
             
-            # Subtext formatted to Y M D
-            passed_display = days_to_ymd(days_passed)
-            speed_subtext = f"{sold_steps_count} steps in {passed_display}"
+            velocity = sold_steps_count / days_passed 
+            
+            # Additional Safety: If velocity is suspiciously high (e.g. > 10 trades/day), data is likely wrong
+            if velocity > 10 and days_passed == 1:
+                time_display = "Check Dates"
+                speed_subtext = "Date Format Error (Too Recent)"
+            else:
+                days_needed = remaining_steps / velocity
+                y = int(days_needed // 365)
+                rem = days_needed % 365
+                m = int(rem // 30)
+                d = int(rem % 30)
+                
+                # Convert passed days to Y M D
+                py = int(days_passed // 365)
+                prem = days_passed % 365
+                pm = int(prem // 30)
+                pd = int(prem % 30)
+                passed_str = f"{py}Y {pm}M {pd}D"
+                
+                time_display = f"{y}Y {m}M {d}D"
+                speed_subtext = f"{sold_steps_count} steps in {passed_str}"
         else:
-            time_display = "Start Trading"
-            speed_subtext = "Velocity 0"
+            time_display = "Date Missing"
+            speed_subtext = "Check Sheet Col A"
     else:
         time_display = "Start Trading"
         speed_subtext = "0 Steps Done"
