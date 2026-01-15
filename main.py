@@ -149,8 +149,10 @@ try:
 
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
+    
+    # --- FIXED: Fetching T6 for Quantity (Column 19) ---
     auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
-    auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
+    auto_qty = h_data[5][19] if len(h_data) > 5 and len(h_data[5]) > 19 else "0"
     
     # Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
@@ -280,7 +282,8 @@ with c_buy:
         if is_buy_active:
             with st.form("buy_form"):
                 st.markdown(f"**Stock:** {auto_stock_code}")
-                try: q_val = int(float(auto_qty))
+                # Convert fetched value to number for default, allow user edit
+                try: q_val = int(float(auto_qty.replace(',','')))
                 except: q_val = 0
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
                 b_price = st.number_input("Exec Price", format="%.2f")
@@ -290,8 +293,8 @@ with c_buy:
                     with st.spinner("Saving..."):
                         raw_vals = h_ws.get('O6:T6')[0]
                         raw_vals[2] = auto_stock_code 
-                        raw_vals[4] = b_price     
-                        raw_vals[5] = final_qty   
+                        raw_vals[4] = b_price      
+                        raw_vals[5] = final_qty    
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
                         st_ws.update_cell(ow_row, 10, auto_stock_code)
                         st_ws.update_cell(ow_row, 11, b_price)
