@@ -33,125 +33,114 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION (WHITE SCREEN FIX)
+# 2. AUTHENTICATION
 # ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
 
 if 'auth' not in st.session_state:
     st.session_state.update({'auth': False, 'sid': None, 'name': None})
 
-def login():
-    st.markdown('<div class="header-box"><h1>🔒 SECURE LOGIN</h1></div>', unsafe_allow_html=True)
-    mobile = st.text_input("Enter Registered Mobile Number")
-    if st.button("UNLOCK TERMINAL"):
-        with st.spinner("Authenticating..."):
-            try:
-                if "SERVICE_ACCOUNT_JSON" in st.secrets:
-                    key_dict = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
-                    gc = gspread.service_account_from_dict(key_dict)
-                else:
-                    gc = gspread.service_account(filename="service_key.json")
-                
-                db_ws = gc.open_by_key(MASTER_ID).worksheet("CLIENT_DB")
-                df_users = pd.DataFrame(db_ws.get_all_records())
-                user = df_users[df_users['Mobile'].astype(str).str.strip() == mobile.strip()]
-                
-                if not user.empty:
-                    st.session_state.sid = str(user.iloc[0]['Sheet_ID']).strip()
-                    st.session_state.name = user.iloc[0]['Client_Name']
-                    st.session_state.auth = True
-                    st.rerun()
-                else:
-                    st.error("❌ Number Not Found!")
-            except Exception as e:
-                st.error(f"Login Error: {e}")
-
 if not st.session_state.auth:
-    login()
+    st.markdown('<div class="header-box"><h1>🔒 SECURE LOGIN</h1></div>', unsafe_allow_html=True)
+    m_num = st.text_input("Enter Registered Mobile Number")
+    if st.button("UNLOCK TERMINAL"):
+        try:
+            if "SERVICE_ACCOUNT_JSON" in st.secrets:
+                key_dict = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
+                gc = gspread.service_account_from_dict(key_dict)
+            else:
+                gc = gspread.service_account(filename="service_key.json")
+            
+            db = gc.open_by_key(MASTER_ID).worksheet("CLIENT_DB")
+            users = pd.DataFrame(db.get_all_records())
+            u_row = users[users['Mobile'].astype(str).str.strip() == m_num.strip()]
+            
+            if not u_row.empty:
+                st.session_state.update({'auth': True, 'sid': str(u_row.iloc[0]['Sheet_ID']).strip(), 'name': u_row.iloc[0]['Client_Name']})
+                st.rerun()
+            else: st.error("❌ Number Not Found!")
+        except Exception as e: st.error(f"Login Error: {e}")
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (ULTRA RELIABLE FETCH)
+# 3. DATA ENGINE (SEARCH & RESCUE)
 # ==========================================
 try:
-    with st.spinner("Fetching Data..."):
-        if "SERVICE_ACCOUNT_JSON" in st.secrets:
-            key_dict = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
-            gc = gspread.service_account_from_dict(key_dict)
-        else:
-            gc = gspread.service_account(filename="service_key.json")
-            
-        sh = gc.open_by_key(st.session_state.sid)
-        h_ws = sh.worksheet("HOLDING")
-        s_ws = sh.worksheet("SOLD")
-        st_ws = sh.worksheet("TRADING STEPS 3%")
-        mp_ws = sh.worksheet("MONTHLY PERFORMANCE")
+    if "SERVICE_ACCOUNT_JSON" in st.secrets:
+        gc = gspread.service_account_from_dict(json.loads(st.secrets["SERVICE_ACCOUNT_JSON"]))
+    else:
+        gc = gspread.service_account(filename="service_key.json")
+        
+    sh = gc.open_by_key(st.session_state.sid)
+    h_ws, s_ws, st_ws, mp_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%"), sh.worksheet("MONTHLY PERFORMANCE")
 
-        # Hum poori sheet ek baar mein uthayenge (Reliable Method)
-        h_data = h_ws.get_all_values()
-        s_data = s_ws.get_all_values()
-        st_data = st_ws.get_all_values()
-        mp_data = mp_ws.get_all_values()
+    # Fetch all data once
+    h_data = h_ws.get_all_values()
+    s_data = s_ws.get_all_values()
+    st_data = st_ws.get_all_values()
+    mp_data = mp_ws.get_all_values()
 
-        # --- BUY SIGNAL (FETCH FROM H_DATA ARRAY) ---
-        # Position mapping: P2 is Row 1, Col 15 | S2 is Row 1, Col 18
-        # Position mapping: Q6 is Row 5, Col 16 | T6 is Row 5, Col 19
-        auto_stock_code = ""
-        auto_qty = "0"
+    # --- THE SUPER SEARCH (P & Q Columns) ---
+    auto_stock_code = ""
+    auto_qty = "0"
+    
+    # We look through Column P (Index 15) and Column Q (Index 16)
+    # Skipping headers manually
+    skips = ["", "0", "0.00", "#N/A", "NONE", "FALSE", "BUY DATE", "STOCK", "CODE", "SYMBOL", "CMP", "QUANTITY", "NOTIONAL P/L% ON AVG PRC"]
+    
+    # Scan Column P first
+    for row in h_data[:20]: # Check first 20 rows
+        if len(row) > 15:
+            val = row[15].strip()
+            if val and val.upper() not in skips and len(val) < 20:
+                auto_stock_code = val
+                auto_qty = row[18].strip() if len(row) > 18 else "0" # Try S2
+                break
+    
+    # If P fails, scan Column Q
+    if not auto_stock_code:
+        for row in h_data[:20]:
+            if len(row) > 16:
+                val = row[16].strip()
+                if val and val.upper() not in skips and len(val) < 20:
+                    auto_stock_code = val
+                    auto_qty = row[19].strip() if len(row) > 19 else "0" # Try T6
+                    break
 
-        # Check Pair 1: P2 and S2
-        try:
-            p2_val = h_data[1][15].strip() if len(h_data) > 1 and len(h_data[1]) > 15 else ""
-            s2_val = h_data[1][18].strip() if len(h_data) > 1 and len(h_data[1]) > 18 else "0"
-            
-            # Check Pair 2: Q6 and T6
-            q6_val = h_data[5][16].strip() if len(h_data) > 5 and len(h_data[5]) > 16 else ""
-            t6_val = h_data[5][19].strip() if len(h_data) > 5 and len(h_data[5]) > 19 else "0"
+    # Core Stats
+    equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
+    progress_count = len([r[10] for r in st_data[2:] if len(r) > 10 and r[10].strip() != ""])
+    sold_steps_count = len([r[2] for r in s_data[4:] if len(r) > 2 and r[2].strip() != ""])
 
-            skips = ["", "0", "0.00", "#N/A", "NONE", "FALSE", "BUY DATE", "STOCK", "CODE", "SYMBOL", "CMP"]
-            
-            if p2_val and p2_val.upper() not in skips:
-                auto_stock_code, auto_qty = p2_val, s2_val
-            elif q6_val and q6_val.upper() not in skips:
-                auto_stock_code, auto_qty = q6_val, t6_val
-        except: pass
+    # AI Time (Fixed Logic)
+    start_date = None
+    for row in s_data[4:]:
+        for cell in row[:2]:
+            if cell.strip():
+                try:
+                    d = pd.to_datetime(cell, dayfirst=True, errors='coerce')
+                    if not pd.isnull(d) and (start_date is None or d.date() < start_date):
+                        start_date = d.date()
+                except: continue
 
-        # Core Stats (Sell logic works, so we keep it same)
-        equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
-        progress_count = len([r[10] for r in st_data[2:] if len(r) > 10 and r[10].strip() != ""])
-        progress_pct = min((progress_count / 457) * 100, 100)
-        sold_steps_count = len([r[2] for r in s_data[4:] if len(r) > 2 and r[2].strip() != ""])
+    days_passed = max((date.today() - (start_date or date.today())).days, 1)
+    velocity = sold_steps_count / days_passed
+    if velocity > 0:
+        days_needed = (457 - sold_steps_count) / velocity
+        y, r = divmod(days_needed, 365); m, d = divmod(r, 30)
+        time_display = f"{int(y)}Y {int(m)}M {int(d)}D"
+        py, pr = divmod(days_passed, 365); pm, pd = divmod(pr, 30)
+        speed_text = f"{sold_steps_count} steps in {int(py)}Y {int(pm)}M {int(pd)}D"
+    else:
+        time_display = "Start Trading"; speed_text = "0 Steps Done"
 
-        # AI TIME
-        start_date = None
-        if len(s_data) > 4:
-            for row in s_data[4:]:
-                for cell_val in row[:2]:
-                    if cell_val.strip():
-                        try:
-                            d = pd.to_datetime(cell_val, dayfirst=True, errors='coerce')
-                            if not pd.isnull(d):
-                                if start_date is None or d.date() < start_date: start_date = d.date()
-                        except: continue
-
-        days_passed = max((date.today() - (start_date or date.today())).days, 1)
-        velocity = sold_steps_count / days_passed
-        if velocity > 0:
-            days_needed = (457 - sold_steps_count) / velocity
-            y, r = divmod(days_needed, 365); m, d = divmod(r, 30)
-            time_display = f"{int(y)}Y {int(m)}M {int(d)}D"
-            py, pr = divmod(days_passed, 365); pm, pd = divmod(pr, 30)
-            speed_text = f"{sold_steps_count} steps in {int(py)}Y {int(pm)}M {int(pd)}D"
-        else:
-            time_display = "Start Trading"; speed_text = "0 Steps Done"
-
-        # Helpers
-        h_col_a = [row[0] for row in h_data]
-        h_target_row = next((i+1 for i, v in enumerate(h_col_a) if i >= 11 and not v.strip()), len(h_col_a)+1)
-        ow_row = next((i+1 for i, r in enumerate(st_data) if i >= 2 and len(r) > 9 and r[9].strip().isdigit()), 3)
+    # Helpers
+    h_col_a = [row[0] for row in h_data]
+    h_target_row = next((i+1 for i, v in enumerate(h_col_a) if i >= 11 and not v.strip()), len(h_col_a)+1)
+    ow_row = next((i+1 for i, r in enumerate(st_data) if i >= 2 and len(r) > 9 and r[9].strip().isdigit()), 3)
 
 except Exception as e:
-    st.error(f"Terminal Load Error: {e}"); st.stop()
+    st.error(f"Data Load Error: {e}"); st.stop()
 
 # ==========================================
 # 4. DASHBOARD UI
@@ -160,12 +149,12 @@ st.markdown(f'<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.
 
 st.markdown(f"""
     <div class="prog-container">
-        <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555;">
+        <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555; margin-bottom:10px;">
             <span>Start: ₹ 2L</span><span>Goal: ₹ 1 Cr</span>
         </div>
-        <div style="background:#eee; height:24px; border-radius:12px; margin-top:10px; position:relative;">
-            <div style="background:#2ea043; width:{progress_pct}%; height:100%; border-radius:12px;"></div>
-            <div style="position:absolute; top:-38px; left:{progress_pct}%; transform:translateX(-50%); background:#003366; color:white; padding:5px 10px; border-radius:6px; font-weight:bold; font-size:12px; white-space:nowrap;">
+        <div style="background:#eee; height:24px; border-radius:12px; position:relative;">
+            <div style="background:#2ea043; width:{(progress_count/457)*100}%; height:100%; border-radius:12px;"></div>
+            <div style="position:absolute; top:-38px; left:{(progress_count/457)*100}%; transform:translateX(-50%); background:#003366; color:white; padding:5px 10px; border-radius:6px; font-weight:bold; font-size:12px; white-space:nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
                 Done: {progress_count} | ₹ {equity_bal}
             </div>
         </div>
@@ -217,11 +206,5 @@ with cs:
                     s_ws.append_row(live, value_input_option='USER_ENTERED'); h_ws.delete_rows(s_idx)
                     st.balloons(); st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else: st.info("No Active Sells.")
-
-# Final Diagnostics (Ab ye fail nahi honge)
-with st.expander("🛠️ Terminal Diagnostics"):
-    st.write(f"P2 (Row1, Col15): '{p2_val if 'p2_val' in locals() else 'N/A'}'")
-    st.write(f"Q6 (Row5, Col16): '{q6_val if 'q6_val' in locals() else 'N/A'}'")
-    st.write(f"Active Buy Code: '{auto_stock_code}'")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
