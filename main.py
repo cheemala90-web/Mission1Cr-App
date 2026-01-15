@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Final Fix", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Fixed Terminal", layout="wide")
 
 st.markdown("""
     <style>
@@ -18,15 +18,27 @@ st.markdown("""
         border-bottom: 5px solid #ff7043; text-align: center; margin-bottom: 30px; 
     }
     .header-box h1 { color: white !important; margin: 0; font-size: 26px; }
+
+    /* ORANGE BUTTONS (FORCED) */
     button[kind="primaryFormSubmit"], .stButton > button {
         background-color: #ff7043 !important; color: white !important;
         border: none !important; width: 100% !important; height: 50px !important;
         font-weight: bold !important; font-size: 18px !important; border-radius: 8px !important;
+        box-shadow: 0 4px 6px rgba(255, 112, 67, 0.3) !important;
     }
-    .prog-container { padding: 20px; border: 2.5px solid #ff7043 !important; border-radius: 12px; margin-bottom: 30px; }
+
+    /* PROGRESS BAR - ORANGE BORDER */
+    .prog-container { 
+        padding: 20px; border: 2.5px solid #ff7043 !important; 
+        border-radius: 12px; margin-bottom: 30px; 
+    }
+
+    /* STATS CARDS */
     .stats-card { background: #f8f9fa; padding: 15px; border: 1px solid #ddd; border-radius: 10px; text-align: center; margin-bottom: 15px; }
     .stats-lbl { color: #666; font-size: 11px; font-weight: bold; text-transform: uppercase; }
     .stats-val { color: #003366; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
+    
+    /* GREEN SPEED TEXT */
     .stats-sub { font-size: 11px; color: #2ea043 !important; font-weight: 800 !important; margin-top: 4px; display: block; }
     div[data-baseweb="input"] > div { border: 2px solid #333333 !important; }
     </style>
@@ -42,19 +54,16 @@ if 'auth' not in st.session_state:
 
 if not st.session_state.auth:
     st.markdown('<div class="header-box"><h1>🔒 SECURE LOGIN</h1></div>', unsafe_allow_html=True)
-    m_num = st.text_input("Enter Registered Mobile Number")
+    l_mob = st.text_input("Enter Registered Mobile Number")
     if st.button("UNLOCK TERMINAL"):
         try:
             if "SERVICE_ACCOUNT_JSON" in st.secrets:
-                key_dict = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
-                gc = gspread.service_account_from_dict(key_dict)
+                gc = gspread.service_account_from_dict(json.loads(st.secrets["SERVICE_ACCOUNT_JSON"]))
             else:
                 gc = gspread.service_account(filename="service_key.json")
-            
             db = gc.open_by_key(MASTER_ID).worksheet("CLIENT_DB")
             users = pd.DataFrame(db.get_all_records())
-            u_row = users[users['Mobile'].astype(str).str.strip() == m_num.strip()]
-            
+            u_row = users[users['Mobile'].astype(str).str.strip() == l_mob.strip()]
             if not u_row.empty:
                 st.session_state.update({'auth': True, 'sid': str(u_row.iloc[0]['Sheet_ID']).strip(), 'name': u_row.iloc[0]['Client_Name']})
                 st.rerun()
@@ -63,56 +72,54 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (SEARCH & RESCUE)
+# 3. DATA ENGINE (LASER FETCH)
 # ==========================================
 try:
     if "SERVICE_ACCOUNT_JSON" in st.secrets:
         gc = gspread.service_account_from_dict(json.loads(st.secrets["SERVICE_ACCOUNT_JSON"]))
     else:
         gc = gspread.service_account(filename="service_key.json")
-        
+    
     sh = gc.open_by_key(st.session_state.sid)
     h_ws, s_ws, st_ws, mp_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%"), sh.worksheet("MONTHLY PERFORMANCE")
 
-    # Fetch all data once
     h_data = h_ws.get_all_values()
     s_data = s_ws.get_all_values()
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
-    # --- THE SUPER SEARCH (P & Q Columns) ---
+    # --- THE LASER FETCH (ONLY 4 CELLS) ---
     auto_stock_code = ""
     auto_qty = "0"
-    
-    # We look through Column P (Index 15) and Column Q (Index 16)
-    # Skipping headers manually
-    skips = ["", "0", "0.00", "#N/A", "NONE", "FALSE", "BUY DATE", "STOCK", "CODE", "SYMBOL", "CMP", "QUANTITY", "NOTIONAL P/L% ON AVG PRC"]
-    
-    # Scan Column P first
-    for row in h_data[:20]: # Check first 20 rows
-        if len(row) > 15:
-            val = row[15].strip()
-            if val and val.upper() not in skips and len(val) < 20:
-                auto_stock_code = val
-                auto_qty = row[18].strip() if len(row) > 18 else "0" # Try S2
-                break
-    
-    # If P fails, scan Column Q
-    if not auto_stock_code:
-        for row in h_data[:20]:
-            if len(row) > 16:
-                val = row[16].strip()
-                if val and val.upper() not in skips and len(val) < 20:
-                    auto_stock_code = val
-                    auto_qty = row[19].strip() if len(row) > 19 else "0" # Try T6
-                    break
 
-    # Core Stats
+    # Batch Fetch to get exact cell values
+    # Q6=Row 6 Col 17, T6=Row 6 Col 20
+    # P2=Row 2 Col 16, S2=Row 2 Col 19
+    res = h_ws.batch_get(['P2', 'S2', 'Q6', 'T6'], value_render_option='FORMATTED_VALUE')
+    
+    v_p2 = str(res[0][0][0]).strip() if res[0] else ""
+    v_s2 = str(res[1][0][0]).strip() if res[1] else "0"
+    v_q6 = str(res[2][0][0]).strip() if res[2] else ""
+    v_t6 = str(res[3][0][0]).strip() if res[3] else "0"
+
+    # Strict Skip List for Headers
+    skips = ["", "0", "0.00", "#N/A", "NONE", "FALSE", "BUY DATE", "STOCK", "CODE", "SYMBOL", "CMP", "QUANTITY", "NOTIONAL P/L% ON AVG PRC"]
+
+    # Priority 1: Check P2 and S2
+    if v_p2 and v_p2.upper() not in skips:
+        auto_stock_code = v_p2
+        auto_qty = v_s2
+    # Priority 2: Check Q6 and T6
+    elif v_q6 and v_q6.upper() not in skips:
+        auto_stock_code = v_q6
+        auto_qty = v_t6
+
+    # Core Logic
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     progress_count = len([r[10] for r in st_data[2:] if len(r) > 10 and r[10].strip() != ""])
     sold_steps_count = len([r[2] for r in s_data[4:] if len(r) > 2 and r[2].strip() != ""])
 
-    # AI Time (Fixed Logic)
+    # AI Time Calculation
     start_date = None
     for row in s_data[4:]:
         for cell in row[:2]:
@@ -134,13 +141,12 @@ try:
     else:
         time_display = "Start Trading"; speed_text = "0 Steps Done"
 
-    # Helpers
     h_col_a = [row[0] for row in h_data]
     h_target_row = next((i+1 for i, v in enumerate(h_col_a) if i >= 11 and not v.strip()), len(h_col_a)+1)
     ow_row = next((i+1 for i, r in enumerate(st_data) if i >= 2 and len(r) > 9 and r[9].strip().isdigit()), 3)
 
 except Exception as e:
-    st.error(f"Data Load Error: {e}"); st.stop()
+    st.error(f"Sync Error: {e}"); st.stop()
 
 # ==========================================
 # 4. DASHBOARD UI
@@ -154,7 +160,7 @@ st.markdown(f"""
         </div>
         <div style="background:#eee; height:24px; border-radius:12px; position:relative;">
             <div style="background:#2ea043; width:{(progress_count/457)*100}%; height:100%; border-radius:12px;"></div>
-            <div style="position:absolute; top:-38px; left:{(progress_count/457)*100}%; transform:translateX(-50%); background:#003366; color:white; padding:5px 10px; border-radius:6px; font-weight:bold; font-size:12px; white-space:nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+            <div style="position:absolute; top:-38px; left:{(progress_count/457)*100}%; transform:translateX(-50%); background:#003366; color:white; padding:5px 10px; border-radius:6px; font-weight:bold; font-size:12px; white-space:nowrap;">
                 Done: {progress_count} | ₹ {equity_bal}
             </div>
         </div>
@@ -165,7 +171,8 @@ c1, c2, c3, c4, c5, c6 = st.columns(6)
 p_row = mp_data[1] if len(mp_data) > 1 else []
 metrics = [(c1, "Steps Completed", sold_steps_count, "#2ea043"), (c2, "AI Time Left", time_display, "#003366"), (c3, "Monthly P%", p_row[3] if len(p_row)>3 else "0%", "#003366"), (c4, "Remaining Steps", (457-sold_steps_count), "#d93025"), (c5, "Pocket %", p_row[5] if len(p_row)>5 else "0%", "#003366"), (c6, "Annualized", p_row[6] if len(p_row)>6 else "0%", "#003366")]
 for col, lbl, val, color in metrics:
-    col.markdown(f'<div class="stats-card"><span class="stats-lbl">{lbl}</span><br><span class="stats-val" style="color:{color}">{val}</span><span class="stats-sub">{speed_text if lbl=="AI Time Left" else ""}</span></div>', unsafe_allow_html=True)
+    sub = speed_text if lbl == "AI Time Left" else ""
+    col.markdown(f'<div class="stats-card"><span class="stats-lbl">{lbl}</span><br><span class="stats-val" style="color:{color}">{val}</span><span class="stats-sub">{sub}</span></div>', unsafe_allow_html=True)
 
 # ==========================================
 # 5. ACTION TERMINAL
@@ -206,5 +213,10 @@ with cs:
                     s_ws.append_row(live, value_input_option='USER_ENTERED'); h_ws.delete_rows(s_idx)
                     st.balloons(); st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else: st.info("No Active Sells.")
+
+with st.expander("🛠️ Final Laser Diagnostic"):
+    st.write(f"P2: '{v_p2}' | S2: '{v_s2}'")
+    st.write(f"Q6: '{v_q6}' | T6: '{v_t6}'")
+    st.write(f"Detected Buy: {auto_stock_code} ({auto_qty})")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
