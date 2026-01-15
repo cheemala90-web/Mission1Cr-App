@@ -9,7 +9,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live Task", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Task Mode", layout="wide")
 
 st.markdown("""
     <style>
@@ -126,7 +126,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (DEBUGGER ADDED)
+# 3. DATA ENGINE (DIRECT CELL ATTACK)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -138,30 +138,34 @@ try:
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
-    # --- STRONG FETCH STRATEGY ---
-    # We fetch O6:T6 specifically. This contains:
-    # O(Date), P(Type), Q(Code), R(Price/Qty?), S(Qty?), T(Val?)
-    # Based on prev code: Q=Code(16), R=Qty(17)
+    # --- BUY SIGNAL FIX (DIRECT Q6 & R6 FETCH) ---
+    debug_q6 = "Not Fetched"
+    debug_r6 = "Not Fetched"
     
-    debug_raw = "Not Fetched"
     try:
-        # Fetch values displayed to user (FORMATTED)
-        raw_range = h_ws.get('O6:T6', value_render_option='FORMATTED_VALUE')
-        debug_raw = raw_range # Saving for debug box
+        # We fetch Q6 and R6 individually to bypass range issues
+        # batch_get is cleaner and handles formulas better in some cases
+        batch_results = h_ws.batch_get(['Q6', 'R6'])
         
-        if raw_range and len(raw_range) > 0 and len(raw_range[0]) > 2:
-            row = raw_range[0]
-            # Trying to be flexible. Index 2 should be Code (Col Q)
-            auto_stock_code = str(row[2])
-            # Index 3 should be Qty (Col R)
-            auto_qty = str(row[3]) if len(row) > 3 else "0"
+        # Parse Q6 (Code)
+        if batch_results and len(batch_results) > 0 and len(batch_results[0]) > 0:
+            auto_stock_code = str(batch_results[0][0][0])
+            debug_q6 = auto_stock_code
         else:
             auto_stock_code = ""
+            
+        # Parse R6 (Qty)
+        if batch_results and len(batch_results) > 1 and len(batch_results[1]) > 0:
+            auto_qty = str(batch_results[1][0][0])
+            debug_r6 = auto_qty
+        else:
             auto_qty = "0"
+
     except Exception as e:
-        debug_raw = f"Error: {e}"
-        auto_stock_code = ""
-        auto_qty = "0"
+        debug_q6 = f"Error: {e}"
+        # Fallback to old array method
+        auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
+        auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
 
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
@@ -281,7 +285,6 @@ st.write("---")
 # Strict check
 is_buy_active = False
 clean_code = str(auto_stock_code).strip().upper()
-# Also removing "0" and "FALSE" which formulas often return
 if clean_code not in ["", "0", "0.00", "#N/A", "NONE", "FALSE", "TRADING..."]:
     is_buy_active = True
 
@@ -307,6 +310,7 @@ with c_buy:
                 
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
+                        # Fetch original row to preserve other columns
                         orig_vals = h_ws.get('O6:T6')[0]
                         orig_vals[2] = auto_stock_code 
                         orig_vals[4] = b_price     
@@ -348,10 +352,10 @@ with c_sell:
         else:
             st.info("No Active Sells. Hold your positions.")
 
-# --- DEBUG SECTION (HIDDEN BY DEFAULT) ---
-with st.expander("🛠️ Debug Data (Click if Buy Signal Missing)"):
-    st.write("Fetched Range (O6:T6):", debug_raw)
+# --- DEBUG SECTION (Updated to show Q6/R6) ---
+with st.expander("🛠️ Debug Data (Open this if Box is Green but Empty)"):
+    st.write(f"Direct Q6 Fetch: '{debug_q6}'")
+    st.write(f"Direct R6 Fetch: '{debug_r6}'")
     st.write(f"Detected Code: '{auto_stock_code}'")
-    st.write(f"Is Buy Active?: {is_buy_active}")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
