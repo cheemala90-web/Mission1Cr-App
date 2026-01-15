@@ -9,7 +9,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Final UI", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Task Mode", layout="wide")
 
 st.markdown("""
     <style>
@@ -28,7 +28,7 @@ st.markdown("""
     }
     .header-box h1 { color: white !important; margin: 0; font-size: 26px; letter-spacing: 1px; }
 
-    /* INPUT FIELDS (High Contrast Black) */
+    /* INPUT FIELDS */
     .stTextInput label, .stNumberInput label {
         color: #000000 !important; font-size: 14px !important; font-weight: bold !important;
     }
@@ -42,9 +42,9 @@ st.markdown("""
         color: #000000 !important; font-weight: 600 !important;
     }
 
-    /* BUTTONS */
+    /* BUTTONS - ORANGE FILL AS REQUESTED */
     div.stButton > button {
-        background-color: #003366 !important; 
+        background-color: #ff7043 !important; /* ORANGE COLOR */
         color: white !important; 
         border: none !important; 
         width: 100% !important; 
@@ -53,8 +53,11 @@ st.markdown("""
         font-weight: bold !important;
         border-radius: 8px !important;
         margin-top: 10px;
+        box-shadow: 0 4px 10px rgba(255, 112, 67, 0.4);
     }
-    div.stButton > button:hover { background-color: #ff7043 !important; }
+    div.stButton > button:hover { 
+        background-color: #e64a19 !important; /* Darker Orange on Hover */
+    }
 
     /* PROGRESS BAR */
     .prog-container {
@@ -76,8 +79,6 @@ st.markdown("""
     }
     .stats-lbl { color: #666; font-size: 11px; font-weight: bold; text-transform: uppercase; }
     .stats-val { color: #003366; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
-    .stats-val-green { color: #2ea043; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
-    .stats-sub { font-size: 10px; color: #777; margin-top: 2px; display: block; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -150,13 +151,11 @@ try:
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
-    # AI Logic (Pandas Fix)
+    # AI Logic
     TARGET_STEPS = 457
     remaining_steps = TARGET_STEPS - sold_steps_count
     
     start_date = date.today()
-    
-    # Extract Dates
     raw_dates = []
     if len(s_data) > 4:
         for row in s_data[4:]:
@@ -165,20 +164,16 @@ try:
             
     if raw_dates:
         try:
-            # Pandas Auto-detect
             dt_index = pd.to_datetime(raw_dates, dayfirst=True, errors='coerce')
             valid_dates = dt_index.dropna()
             if not valid_dates.empty:
                 start_date = valid_dates.min().date()
         except: pass
 
-    # Time Calculation
     if sold_steps_count > 0:
         days_passed = (date.today() - start_date).days
         if days_passed < 1: days_passed = 1
-        
         velocity = sold_steps_count / days_passed
-        
         days_req = remaining_steps / velocity if velocity > 0 else 0
         y, rem = divmod(days_req, 365)
         m, d = divmod(rem, 30)
@@ -255,7 +250,7 @@ for col, lbl, val, color_type in metrics:
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 5. ACTION TERMINAL (BOXES ALWAYS VISIBLE)
+# 5. ACTION TERMINAL
 # ==========================================
 st.write("---")
 
@@ -268,10 +263,9 @@ c_buy, c_sell = st.columns(2)
 
 # --- BUY CARD ---
 with c_buy:
-    # Use Container with Border -> Ensures Form stays INSIDE
     with st.container(border=True):
-        st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY SIGNAL</h3>", unsafe_allow_html=True)
-        st.write("") # Spacer
+        st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
+        st.write("") 
         
         if is_buy_active:
             with st.form("buy_form"):
@@ -281,6 +275,7 @@ with c_buy:
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
                 b_price = st.number_input("Exec Price", format="%.2f")
                 
+                # Orange Button
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
                         raw_vals = h_ws.get('O6:T6')[0]
@@ -291,16 +286,16 @@ with c_buy:
                         st_ws.update_cell(ow_row, 10, auto_stock_code)
                         st_ws.update_cell(ow_row, 11, b_price)
                         st_ws.update_cell(ow_row, 23, str(date.today()))
+                        st.balloons() # Balloons Restored
                         st.success("Buy Saved!"); time.sleep(1); st.rerun()
         else:
             st.info("Nothing to buy today. Come back tomorrow!")
 
 # --- SELL CARD ---
 with c_sell:
-    # Use Container with Border -> Ensures Form stays INSIDE
     with st.container(border=True):
-        st.markdown(f"<h3 style='color:#d93025; margin-top:0; text-align:center;'>🔻 SELL SIGNAL</h3>", unsafe_allow_html=True)
-        st.write("") # Spacer
+        st.markdown(f"<h3 style='color:#d93025; margin-top:0; text-align:center;'>🔻 SELL TASK</h3>", unsafe_allow_html=True)
+        st.write("") 
         
         if is_sell_active:
             row_data = h_data[s_idx-1]
@@ -313,12 +308,14 @@ with c_sell:
                 st.markdown(f"**Holding:** {display_qty}")
                 s_price = st.number_input("Sell Price", format="%.2f")
                 
+                # Orange Button
                 if st.form_submit_button("🚨 BOOK PROFIT"):
                     with st.spinner("Booking..."):
                         live_row = h_ws.row_values(s_idx)[:14]
                         live_row[11] = s_price
                         s_ws.append_row(live_row, value_input_option='USER_ENTERED')
                         h_ws.delete_rows(s_idx)
+                        st.balloons() # Balloons Restored
                         st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else:
             st.info("No Active Sells. Hold your positions.")
