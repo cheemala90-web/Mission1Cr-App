@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | NSE Pattern Fix", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Laser Point V11", layout="wide")
 
 st.markdown("""
     <style>
@@ -18,23 +18,15 @@ st.markdown("""
         border-bottom: 5px solid #ff7043; text-align: center; margin-bottom: 30px; 
     }
     .header-box h1 { color: white !important; margin: 0; font-size: 26px; }
-    
-    /* ORANGE BUTTONS */
     button[kind="primaryFormSubmit"], .stButton > button {
         background-color: #ff7043 !important; color: white !important;
         border: none !important; width: 100% !important; height: 50px !important;
         font-weight: bold !important; font-size: 18px !important; border-radius: 8px !important;
     }
-    
-    /* PROGRESS BAR - ORANGE BORDER */
     .prog-container { padding: 20px; border: 2.5px solid #ff7043 !important; border-radius: 12px; margin-bottom: 30px; }
-    
-    /* STATS CARDS */
     .stats-card { background: #f8f9fa; padding: 15px; border: 1px solid #ddd; border-radius: 10px; text-align: center; margin-bottom: 15px; }
     .stats-lbl { color: #666; font-size: 11px; font-weight: bold; text-transform: uppercase; }
     .stats-val { color: #003366; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
-    
-    /* GREEN SPEED TEXT */
     .stats-sub { font-size: 11px; color: #2ea043 !important; font-weight: 800 !important; margin-top: 4px; display: block; }
     div[data-baseweb="input"] > div { border: 2px solid #333333 !important; }
     </style>
@@ -67,7 +59,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (NSE PATTERN SCANNER)
+# 3. DATA ENGINE (FIXED INDEX FOCUS)
 # ==========================================
 try:
     if "SERVICE_ACCOUNT_JSON" in st.secrets:
@@ -83,33 +75,30 @@ try:
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
-    # --- THE NSE PATTERN SCANNER ---
+    # --- LASER POINT BUY LOGIC ---
     auto_stock_code = ""
     auto_qty = "0"
-    
-    # Scanning Row 2 (h_data[1]) and Row 6 (h_data[5])
-    for r_idx in [1, 5]:
-        if len(h_data) > r_idx:
-            row = h_data[r_idx]
-            for c_idx, cell_val in enumerate(row):
-                if "NSE:" in cell_val.upper():
-                    auto_stock_code = cell_val.strip()
-                    # Qty Mapping: 
-                    # Row 2 (r_idx 1) -> Qty in S2 (Col Index 18)
-                    # Row 6 (r_idx 5) -> Qty in T6 (Col Index 19)
-                    if r_idx == 1:
-                        auto_qty = row[18] if len(row) > 18 else "0"
-                    else:
-                        auto_qty = row[19] if len(row) > 19 else "0"
-                    break
-        if auto_stock_code: break
+    skips = ["", "0", "0.00", "#N/A", "NONE", "FALSE", "BUY DATE", "STOCK", "CODE", "SYMBOL", "CMP", "QUANTITY", "NOTIONAL P/L% ON AVG PRC", "AVG PRC"]
+
+    # Check P2 First (Row Index 1, Col Index 15)
+    p2_val = h_data[1][15].strip() if len(h_data) > 1 and len(h_data[1]) > 15 else ""
+    s2_val = h_data[1][18].strip() if len(h_data) > 1 and len(h_data[1]) > 18 else "0"
+
+    # Check Q6 (Row Index 5, Col Index 16)
+    q6_val = h_data[5][16].strip() if len(h_data) > 5 and len(h_data[5]) > 16 else ""
+    t6_val = h_data[5][19].strip() if len(h_data) > 5 and len(h_data[5]) > 19 else "0"
+
+    if p2_val and p2_val.upper() not in skips:
+        auto_stock_code, auto_qty = p2_val, s2_val
+    elif q6_val and q6_val.upper() not in skips:
+        auto_stock_code, auto_qty = q6_val, t6_val
 
     # Core Stats
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     progress_count = len([r[10] for r in st_data[2:] if len(r) > 10 and r[10].strip() != ""])
     sold_steps_count = len([r[2] for r in s_data[4:] if len(r) > 2 and r[2].strip() != ""])
 
-    # AI Time Left
+    # AI Time (Fixed Logic)
     start_date = None
     for row in s_data[4:]:
         for cell in row[:2]:
@@ -201,5 +190,10 @@ with cs:
                     s_ws.append_row(live, value_input_option='USER_ENTERED'); h_ws.delete_rows(s_idx)
                     st.balloons(); st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else: st.info("No Active Sells.")
+
+with st.expander("🛠️ Final Laser Diagnostic"):
+    st.write(f"P2 (Fix): '{p2_val}' | S2 (Fix): '{s2_val}'")
+    st.write(f"Q6 (Fix): '{q6_val}' | T6 (Fix): '{t6_val}'")
+    st.write(f"Result: {auto_stock_code} ({auto_qty})")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
