@@ -9,7 +9,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Task Mode", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live Task", layout="wide")
 
 st.markdown("""
     <style>
@@ -126,7 +126,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (FIXED: DIRECT CELL FETCH)
+# 3. DATA ENGINE (DEBUGGER ADDED)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -138,27 +138,30 @@ try:
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
-    # --- BUY SIGNAL FIX ---
-    # We fetch Q6 (Code) and R6 (Qty) directly using 'FORMATTED_VALUE'
-    # This ensures we get the displayed text result of any formula
+    # --- STRONG FETCH STRATEGY ---
+    # We fetch O6:T6 specifically. This contains:
+    # O(Date), P(Type), Q(Code), R(Price/Qty?), S(Qty?), T(Val?)
+    # Based on prev code: Q=Code(16), R=Qty(17)
+    
+    debug_raw = "Not Fetched"
     try:
-        # Fetching specific range Q6:R6
-        signal_data = h_ws.get('Q6:R6', value_render_option='FORMATTED_VALUE')
+        # Fetch values displayed to user (FORMATTED)
+        raw_range = h_ws.get('O6:T6', value_render_option='FORMATTED_VALUE')
+        debug_raw = raw_range # Saving for debug box
         
-        if signal_data and len(signal_data) > 0:
-            row_vals = signal_data[0]
-            # Get Code from first cell (Q6)
-            auto_stock_code = row_vals[0] if len(row_vals) > 0 else ""
-            # Get Qty from second cell (R6)
-            auto_qty = row_vals[1] if len(row_vals) > 1 else "0"
+        if raw_range and len(raw_range) > 0 and len(raw_range[0]) > 2:
+            row = raw_range[0]
+            # Trying to be flexible. Index 2 should be Code (Col Q)
+            auto_stock_code = str(row[2])
+            # Index 3 should be Qty (Col R)
+            auto_qty = str(row[3]) if len(row) > 3 else "0"
         else:
             auto_stock_code = ""
             auto_qty = "0"
-            
     except Exception as e:
-        # Fallback to array method if direct fetch fails
-        auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
-        auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
+        debug_raw = f"Error: {e}"
+        auto_stock_code = ""
+        auto_qty = "0"
 
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
@@ -168,11 +171,11 @@ try:
     progress_count = len([x for x in k_vals if x.strip() != ""])
     progress_pct = min((progress_count / 457) * 100, 100)
     
-    # Sold Steps Count
+    # Sold Steps
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
-    # AI Logic (Date Fix)
+    # AI Logic
     TARGET_STEPS = 457
     remaining_steps = TARGET_STEPS - sold_steps_count
     
@@ -275,12 +278,12 @@ for col, lbl, val, color_type in metrics:
 # ==========================================
 st.write("---")
 
-# Strict check for valid stock code
+# Strict check
 is_buy_active = False
-if auto_stock_code:
-    clean_code = str(auto_stock_code).strip().upper()
-    if clean_code not in ["", "0", "#N/A", "NONE", "FALSE"]:
-        is_buy_active = True
+clean_code = str(auto_stock_code).strip().upper()
+# Also removing "0" and "FALSE" which formulas often return
+if clean_code not in ["", "0", "0.00", "#N/A", "NONE", "FALSE", "TRADING..."]:
+    is_buy_active = True
 
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
@@ -304,12 +307,10 @@ with c_buy:
                 
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        # Fetch original row to preserve other columns
                         orig_vals = h_ws.get('O6:T6')[0]
                         orig_vals[2] = auto_stock_code 
                         orig_vals[4] = b_price     
                         orig_vals[5] = final_qty   
-                        
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [orig_vals], value_input_option='USER_ENTERED')
                         st_ws.update_cell(ow_row, 10, auto_stock_code)
                         st_ws.update_cell(ow_row, 11, b_price)
@@ -346,5 +347,11 @@ with c_sell:
                         st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else:
             st.info("No Active Sells. Hold your positions.")
+
+# --- DEBUG SECTION (HIDDEN BY DEFAULT) ---
+with st.expander("🛠️ Debug Data (Click if Buy Signal Missing)"):
+    st.write("Fetched Range (O6:T6):", debug_raw)
+    st.write(f"Detected Code: '{auto_stock_code}'")
+    st.write(f"Is Buy Active?: {is_buy_active}")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
