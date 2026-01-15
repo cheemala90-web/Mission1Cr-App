@@ -9,7 +9,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Final Look", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
 
 st.markdown("""
     <style>
@@ -42,9 +42,9 @@ st.markdown("""
         color: #000000 !important; font-weight: 600 !important;
     }
 
-    /* BUTTONS - FORCE ORANGE */
-    div.stButton > button, div[data-testid="stFormSubmitButton"] > button {
-        background-color: #ff7043 !important; /* ORANGE */
+    /* BUTTONS */
+    div.stButton > button {
+        background-color: #ff7043 !important; 
         color: white !important; 
         border: none !important; 
         width: 100% !important; 
@@ -55,16 +55,15 @@ st.markdown("""
         margin-top: 10px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.2);
     }
-    div.stButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover { 
-        background-color: #e64a19 !important; /* Darker Orange Hover */
-        color: white !important;
+    div.stButton > button:hover { 
+        background-color: #e64a19 !important; 
     }
 
-    /* PROGRESS BAR - ORANGE BORDER */
+    /* PROGRESS BAR */
     .prog-container {
         padding: 20px; 
         background: white; 
-        border: 2px solid #ff7043 !important; /* ORANGE BORDER */
+        border: 2px solid #ff7043 !important; 
         border-radius: 12px;
         margin-bottom: 30px;
     }
@@ -80,15 +79,7 @@ st.markdown("""
     }
     .stats-lbl { color: #666; font-size: 11px; font-weight: bold; text-transform: uppercase; }
     .stats-val { color: #003366; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
-    
-    /* GREEN SUBTEXT (Steps in Y M D) */
-    .stats-sub { 
-        font-size: 11px; 
-        color: #2ea043 !important; /* GREEN COLOR */
-        font-weight: 700 !important; /* BOLD */
-        margin-top: 4px; 
-        display: block; 
-    }
+    .stats-sub { font-size: 11px; color: #2ea043 !important; font-weight: 700 !important; margin-top: 4px; display: block; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -135,7 +126,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE
+# 3. DATA ENGINE (FORMULA FIX APPLIED)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -147,10 +138,24 @@ try:
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
+    # --- FIX: Fetch Buy Signal Data treating formulas as values ---
+    # Fetch range O6:R6 specifically with ValueRenderOption
+    # O=0, P=1, Q=2 (Code), R=3 (Qty)
+    try:
+        raw_signal = h_ws.get('O6:R6', value_render_option='UNFORMATTED_VALUE')
+        if raw_signal and len(raw_signal[0]) >= 4:
+            auto_stock_code = str(raw_signal[0][2]) # Column Q
+            auto_qty = str(raw_signal[0][3])        # Column R
+        else:
+            # Fallback
+            auto_stock_code = h_data[5][16] 
+            auto_qty = h_data[5][17]
+    except:
+        auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
+        auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
+
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
-    auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
-    auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
     
     # Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
@@ -221,7 +226,7 @@ except Exception as e:
 # ==========================================
 st.markdown(f'<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.name.upper()}</h1></div>', unsafe_allow_html=True)
 
-# Progress Bar (With Orange Border)
+# Progress Bar
 st.markdown(f"""
     <div class="prog-container">
         <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555; margin-bottom:10px;">
@@ -264,7 +269,7 @@ for col, lbl, val, color_type in metrics:
 # ==========================================
 st.write("---")
 
-is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]
+is_buy_active = auto_stock_code and str(auto_stock_code).strip() not in ["", "0", "#N/A", "None"]
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
 is_sell_active = s_idx is not None
@@ -285,14 +290,20 @@ with c_buy:
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
                 b_price = st.number_input("Exec Price", format="%.2f")
                 
-                # Orange Button
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        raw_vals = h_ws.get('O6:T6')[0]
-                        raw_vals[2] = auto_stock_code 
-                        raw_vals[4] = b_price     
-                        raw_vals[5] = final_qty   
-                        h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
+                        # Re-fetch explicitly before save to ensure no stale data
+                        # Only update necessary cells
+                        # Assuming range O6:T6 -> [Date, Type, Code, Price, TP, Qty]
+                        # We need to write to A{target}:F{target} -> [Date, Type, Code, Code, Price, Qty]
+                        
+                        # Fetch original values from O6:T6
+                        orig_vals = h_ws.get('O6:T6')[0]
+                        orig_vals[2] = auto_stock_code 
+                        orig_vals[4] = b_price     
+                        orig_vals[5] = final_qty   
+                        
+                        h_ws.update(f'A{h_target_row}:F{h_target_row}', [orig_vals], value_input_option='USER_ENTERED')
                         st_ws.update_cell(ow_row, 10, auto_stock_code)
                         st_ws.update_cell(ow_row, 11, b_price)
                         st_ws.update_cell(ow_row, 23, str(date.today()))
@@ -318,7 +329,6 @@ with c_sell:
                 st.markdown(f"**Holding:** {display_qty}")
                 s_price = st.number_input("Sell Price", format="%.2f")
                 
-                # Orange Button
                 if st.form_submit_button("🚨 BOOK PROFIT"):
                     with st.spinner("Booking..."):
                         live_row = h_ws.row_values(s_idx)[:14]
