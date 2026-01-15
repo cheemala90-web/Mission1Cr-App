@@ -9,7 +9,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Task Mode", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Final Look", layout="wide")
 
 st.markdown("""
     <style>
@@ -42,9 +42,9 @@ st.markdown("""
         color: #000000 !important; font-weight: 600 !important;
     }
 
-    /* BUTTONS - ORANGE FILL AS REQUESTED */
-    div.stButton > button {
-        background-color: #ff7043 !important; /* ORANGE COLOR */
+    /* BUTTONS - FORCE ORANGE */
+    div.stButton > button, div[data-testid="stFormSubmitButton"] > button {
+        background-color: #ff7043 !important; /* ORANGE */
         color: white !important; 
         border: none !important; 
         width: 100% !important; 
@@ -53,17 +53,18 @@ st.markdown("""
         font-weight: bold !important;
         border-radius: 8px !important;
         margin-top: 10px;
-        box-shadow: 0 4px 10px rgba(255, 112, 67, 0.4);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
     }
-    div.stButton > button:hover { 
-        background-color: #e64a19 !important; /* Darker Orange on Hover */
+    div.stButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover { 
+        background-color: #e64a19 !important; /* Darker Orange Hover */
+        color: white !important;
     }
 
-    /* PROGRESS BAR */
+    /* PROGRESS BAR - ORANGE BORDER */
     .prog-container {
         padding: 20px; 
         background: white; 
-        border: 1px solid #ccc; 
+        border: 2px solid #ff7043 !important; /* ORANGE BORDER */
         border-radius: 12px;
         margin-bottom: 30px;
     }
@@ -79,6 +80,15 @@ st.markdown("""
     }
     .stats-lbl { color: #666; font-size: 11px; font-weight: bold; text-transform: uppercase; }
     .stats-val { color: #003366; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
+    
+    /* GREEN SUBTEXT (Steps in Y M D) */
+    .stats-sub { 
+        font-size: 11px; 
+        color: #2ea043 !important; /* GREEN COLOR */
+        font-weight: 700 !important; /* BOLD */
+        margin-top: 4px; 
+        display: block; 
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -211,7 +221,7 @@ except Exception as e:
 # ==========================================
 st.markdown(f'<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.name.upper()}</h1></div>', unsafe_allow_html=True)
 
-# Progress Bar
+# Progress Bar (With Orange Border)
 st.markdown(f"""
     <div class="prog-container">
         <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555; margin-bottom:10px;">
@@ -286,7 +296,7 @@ with c_buy:
                         st_ws.update_cell(ow_row, 10, auto_stock_code)
                         st_ws.update_cell(ow_row, 11, b_price)
                         st_ws.update_cell(ow_row, 23, str(date.today()))
-                        st.balloons() # Balloons Restored
+                        st.balloons()
                         st.success("Buy Saved!"); time.sleep(1); st.rerun()
         else:
             st.info("Nothing to buy today. Come back tomorrow!")
@@ -315,7 +325,7 @@ with c_sell:
                         live_row[11] = s_price
                         s_ws.append_row(live_row, value_input_option='USER_ENTERED')
                         h_ws.delete_rows(s_idx)
-                        st.balloons() # Balloons Restored
+                        st.balloons()
                         st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else:
             st.info("No Active Sells. Hold your positions.")
