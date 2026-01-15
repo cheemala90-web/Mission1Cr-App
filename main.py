@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Final Fix V5", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Final Fix V6", layout="wide")
 
 st.markdown("""
     <style>
@@ -19,7 +19,7 @@ st.markdown("""
     }
     .header-box h1 { color: white !important; margin: 0; font-size: 26px; }
 
-    /* ORANGE BUTTONS */
+    /* ORANGE BUTTONS (FORCED) */
     button[kind="primaryFormSubmit"], .stButton > button {
         background-color: #ff7043 !important; color: white !important;
         border: none !important; width: 100% !important; height: 50px !important;
@@ -78,7 +78,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (SUPER SCAN V5)
+# 3. DATA ENGINE (V6 HEADER-PROOF)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -90,18 +90,20 @@ try:
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
-    # --- THE SUPER SCANNER (FOR P2 AND S2) ---
+    # --- THE SMART SCANNER (SKIPS HEADERS) ---
     auto_stock_code = ""
     auto_qty = "0"
     
-    # We fetch Columns P (16) and S (19) entirely to find the first valid signal
+    # Column P (16) and S (19)
     col_p = h_ws.col_values(16, value_render_option='FORMATTED_VALUE')
     col_s = h_ws.col_values(19, value_render_option='FORMATTED_VALUE')
     
-    # Scan from Row 2 downwards
+    # Exclusion List (Headers to skip)
+    skips = ["", "0", "NONE", "FALSE", "#N/A", "STOCK", "BUY DATE", "CODE", "SYMBOL", "CMP", "QUANTITY"]
+    
     for i in range(1, len(col_p)):
         val = str(col_p[i]).strip()
-        if val and val.upper() not in ["0", "NONE", "FALSE", "#N/A", "STOCK"]:
+        if val and val.upper() not in skips:
             auto_stock_code = val
             auto_qty = str(col_s[i]).strip() if i < len(col_s) else "0"
             break
@@ -113,11 +115,11 @@ try:
     sold_steps_count = len([r[2] for r in s_data[4:] if len(r) > 2 and r[2].strip() != ""])
     remaining_steps = 457 - sold_steps_count
 
-    # --- AI TIME FIX (STRICT DATE SCAN) ---
+    # AI TIME CALCULATION (FIXED)
     start_date = None
     if len(s_data) > 4:
         for row in s_data[4:]:
-            for cell_val in row[:2]: # Scan Buy/Sell Date Columns
+            for cell_val in row[:2]:
                 if cell_val.strip():
                     try:
                         d = pd.to_datetime(cell_val, dayfirst=True, errors='coerce')
@@ -130,14 +132,14 @@ try:
         days_passed = max((date.today() - start_date).days, 1)
         velocity = sold_steps_count / days_passed
         days_needed = remaining_steps / velocity
+        
         y, r = divmod(days_needed, 365); m, d = divmod(r, 30)
         time_display = f"{int(y)}Y {int(m)}M {int(d)}D"
         
         py, pr = divmod(days_passed, 365); pm, pd = divmod(pr, 30)
         speed_text = f"{sold_steps_count} steps in {int(py)}Y {int(pm)}M {int(pd)}D"
     else:
-        time_display = "Start Trading"
-        speed_text = "0 Steps Done"
+        time_display = "Start Trading"; speed_text = "0 Steps Completed"
 
     # Helpers
     h_col_a = [row[0] for row in h_data]
@@ -220,12 +222,5 @@ with cs:
                     s_ws.append_row(live, value_input_option='USER_ENTERED'); h_ws.delete_rows(s_idx)
                     st.balloons(); st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else: st.info("No Active Sells. Hold tight!")
-
-# --- DIAGNOSTIC EXPANDER ---
-with st.expander("🛠️ Final System Diagnostic"):
-    st.write(f"Detected Code: '{auto_stock_code}'")
-    st.write(f"Detected Qty: '{auto_qty}'")
-    st.write(f"Earliest Trade Date: {start_date}")
-    st.write(f"Days Passed: {(date.today() - start_date).days if start_date else 'N/A'}")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
