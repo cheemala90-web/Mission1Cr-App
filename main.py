@@ -3,13 +3,12 @@ import gspread
 import pandas as pd
 from datetime import date, datetime
 import time
-import os
 import json
 
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Fixed V4", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Final Fix V5", layout="wide")
 
 st.markdown("""
     <style>
@@ -79,28 +78,33 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (AREA SCAN V4)
+# 3. DATA ENGINE (SUPER SCAN V5)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
     h_ws, s_ws, st_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%")
     mp_ws = sh.worksheet("MONTHLY PERFORMANCE")
 
-    # Fetching Bulk Data to avoid caching issues
-    h_top_area = h_ws.get('A1:T10', value_render_option='FORMATTED_VALUE')
     h_data = h_ws.get_all_values()
     s_data = s_ws.get_all_values()
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
-    # --- P2 & S2 FETCH (FROM AREA SCAN) ---
-    # Row 2 (Index 1), Column P (Index 15), Column S (Index 18)
+    # --- THE SUPER SCANNER (FOR P2 AND S2) ---
     auto_stock_code = ""
     auto_qty = "0"
-    if len(h_top_area) >= 2:
-        row2 = h_top_area[1]
-        auto_stock_code = str(row2[15]).strip() if len(row2) > 15 else ""
-        auto_qty = str(row2[18]).strip() if len(row2) > 18 else "0"
+    
+    # We fetch Columns P (16) and S (19) entirely to find the first valid signal
+    col_p = h_ws.col_values(16, value_render_option='FORMATTED_VALUE')
+    col_s = h_ws.col_values(19, value_render_option='FORMATTED_VALUE')
+    
+    # Scan from Row 2 downwards
+    for i in range(1, len(col_p)):
+        val = str(col_p[i]).strip()
+        if val and val.upper() not in ["0", "NONE", "FALSE", "#N/A", "STOCK"]:
+            auto_stock_code = val
+            auto_qty = str(col_s[i]).strip() if i < len(col_s) else "0"
+            break
 
     # Core Stats
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
@@ -109,25 +113,22 @@ try:
     sold_steps_count = len([r[2] for r in s_data[4:] if len(r) > 2 and r[2].strip() != ""])
     remaining_steps = 457 - sold_steps_count
 
-    # AI Time Fix
-    start_date = date.today()
-    found_dates = []
+    # --- AI TIME FIX (STRICT DATE SCAN) ---
+    start_date = None
     if len(s_data) > 4:
         for row in s_data[4:]:
-            for cell_val in row[:2]:
+            for cell_val in row[:2]: # Scan Buy/Sell Date Columns
                 if cell_val.strip():
                     try:
                         d = pd.to_datetime(cell_val, dayfirst=True, errors='coerce')
-                        if not pd.isnull(d): found_dates.append(d.date())
+                        if not pd.isnull(d):
+                            if start_date is None or d.date() < start_date:
+                                start_date = d.date()
                     except: continue
-    
-    if found_dates:
-        start_date = min(found_dates)
 
-    days_passed = max((date.today() - start_date).days, 1)
-    velocity = sold_steps_count / days_passed
-    
-    if velocity > 0:
+    if sold_steps_count > 0 and start_date:
+        days_passed = max((date.today() - start_date).days, 1)
+        velocity = sold_steps_count / days_passed
         days_needed = remaining_steps / velocity
         y, r = divmod(days_needed, 365); m, d = divmod(r, 30)
         time_display = f"{int(y)}Y {int(m)}M {int(d)}D"
@@ -135,9 +136,10 @@ try:
         py, pr = divmod(days_passed, 365); pm, pd = divmod(pr, 30)
         speed_text = f"{sold_steps_count} steps in {int(py)}Y {int(pm)}M {int(pd)}D"
     else:
-        time_display = "Start Trading"; speed_text = "0 Steps Done"
+        time_display = "Start Trading"
+        speed_text = "0 Steps Done"
 
-    # Save Helpers
+    # Helpers
     h_col_a = [row[0] for row in h_data]
     h_target_row = next((i+1 for i, v in enumerate(h_col_a) if i >= 11 and not v.strip()), len(h_col_a)+1)
     ow_row = next((i+1 for i, r in enumerate(st_data) if i >= 2 and len(r) > 9 and r[9].strip().isdigit()), 3)
@@ -150,6 +152,7 @@ except Exception as e:
 # ==========================================
 st.markdown(f'<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.name.upper()}</h1></div>', unsafe_allow_html=True)
 
+# Progress Bar (Orange Border)
 st.markdown(f"""
     <div class="prog-container">
         <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555; margin-bottom:10px;">
@@ -217,5 +220,12 @@ with cs:
                     s_ws.append_row(live, value_input_option='USER_ENTERED'); h_ws.delete_rows(s_idx)
                     st.balloons(); st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else: st.info("No Active Sells. Hold tight!")
+
+# --- DIAGNOSTIC EXPANDER ---
+with st.expander("🛠️ Final System Diagnostic"):
+    st.write(f"Detected Code: '{auto_stock_code}'")
+    st.write(f"Detected Qty: '{auto_qty}'")
+    st.write(f"Earliest Trade Date: {start_date}")
+    st.write(f"Days Passed: {(date.today() - start_date).days if start_date else 'N/A'}")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
