@@ -9,7 +9,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Task Mode", layout="wide")
 
 st.markdown("""
     <style>
@@ -42,8 +42,8 @@ st.markdown("""
         color: #000000 !important; font-weight: 600 !important;
     }
 
-    /* BUTTONS */
-    div.stButton > button {
+    /* BUTTONS - FORCE ORANGE */
+    div.stButton > button, div[data-testid="stFormSubmitButton"] > button {
         background-color: #ff7043 !important; 
         color: white !important; 
         border: none !important; 
@@ -55,7 +55,7 @@ st.markdown("""
         margin-top: 10px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.2);
     }
-    div.stButton > button:hover { 
+    div.stButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover { 
         background-color: #e64a19 !important; 
     }
 
@@ -126,7 +126,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (FORMULA FIX APPLIED)
+# 3. DATA ENGINE (FIXED: DIRECT CELL FETCH)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -138,19 +138,25 @@ try:
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
-    # --- FIX: Fetch Buy Signal Data treating formulas as values ---
-    # Fetch range O6:R6 specifically with ValueRenderOption
-    # O=0, P=1, Q=2 (Code), R=3 (Qty)
+    # --- BUY SIGNAL FIX ---
+    # We fetch Q6 (Code) and R6 (Qty) directly using 'FORMATTED_VALUE'
+    # This ensures we get the displayed text result of any formula
     try:
-        raw_signal = h_ws.get('O6:R6', value_render_option='UNFORMATTED_VALUE')
-        if raw_signal and len(raw_signal[0]) >= 4:
-            auto_stock_code = str(raw_signal[0][2]) # Column Q
-            auto_qty = str(raw_signal[0][3])        # Column R
+        # Fetching specific range Q6:R6
+        signal_data = h_ws.get('Q6:R6', value_render_option='FORMATTED_VALUE')
+        
+        if signal_data and len(signal_data) > 0:
+            row_vals = signal_data[0]
+            # Get Code from first cell (Q6)
+            auto_stock_code = row_vals[0] if len(row_vals) > 0 else ""
+            # Get Qty from second cell (R6)
+            auto_qty = row_vals[1] if len(row_vals) > 1 else "0"
         else:
-            # Fallback
-            auto_stock_code = h_data[5][16] 
-            auto_qty = h_data[5][17]
-    except:
+            auto_stock_code = ""
+            auto_qty = "0"
+            
+    except Exception as e:
+        # Fallback to array method if direct fetch fails
         auto_stock_code = h_data[5][16] if len(h_data) > 5 else "" 
         auto_qty = h_data[5][17] if len(h_data) > 5 else "0"
 
@@ -166,7 +172,7 @@ try:
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
-    # AI Logic
+    # AI Logic (Date Fix)
     TARGET_STEPS = 457
     remaining_steps = TARGET_STEPS - sold_steps_count
     
@@ -269,7 +275,13 @@ for col, lbl, val, color_type in metrics:
 # ==========================================
 st.write("---")
 
-is_buy_active = auto_stock_code and str(auto_stock_code).strip() not in ["", "0", "#N/A", "None"]
+# Strict check for valid stock code
+is_buy_active = False
+if auto_stock_code:
+    clean_code = str(auto_stock_code).strip().upper()
+    if clean_code not in ["", "0", "#N/A", "NONE", "FALSE"]:
+        is_buy_active = True
+
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
 is_sell_active = s_idx is not None
@@ -292,12 +304,7 @@ with c_buy:
                 
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        # Re-fetch explicitly before save to ensure no stale data
-                        # Only update necessary cells
-                        # Assuming range O6:T6 -> [Date, Type, Code, Price, TP, Qty]
-                        # We need to write to A{target}:F{target} -> [Date, Type, Code, Code, Price, Qty]
-                        
-                        # Fetch original values from O6:T6
+                        # Fetch original row to preserve other columns
                         orig_vals = h_ws.get('O6:T6')[0]
                         orig_vals[2] = auto_stock_code 
                         orig_vals[4] = b_price     
