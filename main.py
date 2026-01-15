@@ -9,7 +9,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Ultimate Fix V3", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Fixed V4", layout="wide")
 
 st.markdown("""
     <style>
@@ -25,7 +25,6 @@ st.markdown("""
         background-color: #ff7043 !important; color: white !important;
         border: none !important; width: 100% !important; height: 50px !important;
         font-weight: bold !important; font-size: 18px !important; border-radius: 8px !important;
-        box-shadow: 0 4px 6px rgba(255, 112, 67, 0.3) !important;
     }
 
     /* PROGRESS BAR - ORANGE BORDER */
@@ -80,27 +79,28 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V3 ROBUST)
+# 3. DATA ENGINE (AREA SCAN V4)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
     h_ws, s_ws, st_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%")
     mp_ws = sh.worksheet("MONTHLY PERFORMANCE")
 
+    # Fetching Bulk Data to avoid caching issues
+    h_top_area = h_ws.get('A1:T10', value_render_option='FORMATTED_VALUE')
     h_data = h_ws.get_all_values()
     s_data = s_ws.get_all_values()
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
-    # --- BUY SIGNAL FIX (P2 & S2 BATCH FETCH) ---
+    # --- P2 & S2 FETCH (FROM AREA SCAN) ---
+    # Row 2 (Index 1), Column P (Index 15), Column S (Index 18)
     auto_stock_code = ""
     auto_qty = "0"
-    try:
-        # Batch get for P2 and S2 to ensure values are captured
-        res = h_ws.batch_get(['P2', 'S2'], value_render_option='FORMATTED_VALUE')
-        auto_stock_code = str(res[0][0][0]).strip() if res[0] else ""
-        auto_qty = str(res[1][0][0]).strip() if res[1] else "0"
-    except: pass
+    if len(h_top_area) >= 2:
+        row2 = h_top_area[1]
+        auto_stock_code = str(row2[15]).strip() if len(row2) > 15 else ""
+        auto_qty = str(row2[18]).strip() if len(row2) > 18 else "0"
 
     # Core Stats
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
@@ -109,16 +109,14 @@ try:
     sold_steps_count = len([r[2] for r in s_data[4:] if len(r) > 2 and r[2].strip() != ""])
     remaining_steps = 457 - sold_steps_count
 
-    # --- AI TIME FIX (IMPROVED DATE PARSING) ---
+    # AI Time Fix
     start_date = date.today()
     found_dates = []
     if len(s_data) > 4:
         for row in s_data[4:]:
-            # Check Column A and B for dates
             for cell_val in row[:2]:
                 if cell_val.strip():
                     try:
-                        # Try multiple formats manually if pandas fails
                         d = pd.to_datetime(cell_val, dayfirst=True, errors='coerce')
                         if not pd.isnull(d): found_dates.append(d.date())
                     except: continue
@@ -126,10 +124,9 @@ try:
     if found_dates:
         start_date = min(found_dates)
 
-    days_passed = (date.today() - start_date).days
-    if days_passed < 1: days_passed = 1 # Minimum 1 day to avoid infinite velocity
-    
+    days_passed = max((date.today() - start_date).days, 1)
     velocity = sold_steps_count / days_passed
+    
     if velocity > 0:
         days_needed = remaining_steps / velocity
         y, r = divmod(days_needed, 365); m, d = divmod(r, 30)
@@ -138,9 +135,9 @@ try:
         py, pr = divmod(days_passed, 365); pm, pd = divmod(pr, 30)
         speed_text = f"{sold_steps_count} steps in {int(py)}Y {int(pm)}M {int(pd)}D"
     else:
-        time_display = "Start Trading"; speed_text = "0 Steps Completed"
+        time_display = "Start Trading"; speed_text = "0 Steps Done"
 
-    # Helpers for Saving
+    # Save Helpers
     h_col_a = [row[0] for row in h_data]
     h_target_row = next((i+1 for i, v in enumerate(h_col_a) if i >= 11 and not v.strip()), len(h_col_a)+1)
     ow_row = next((i+1 for i, r in enumerate(st_data) if i >= 2 and len(r) > 9 and r[9].strip().isdigit()), 3)
@@ -153,7 +150,6 @@ except Exception as e:
 # ==========================================
 st.markdown(f'<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.name.upper()}</h1></div>', unsafe_allow_html=True)
 
-# Progress Bar
 st.markdown(f"""
     <div class="prog-container">
         <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555; margin-bottom:10px;">
@@ -221,11 +217,5 @@ with cs:
                     s_ws.append_row(live, value_input_option='USER_ENTERED'); h_ws.delete_rows(s_idx)
                     st.balloons(); st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else: st.info("No Active Sells. Hold tight!")
-
-# --- DEBUGGER (USE THIS IF STILL NOT FETCHING) ---
-with st.expander("🛠️ Final Debug Engine"):
-    st.write(f"P2 Content: '{auto_stock_code}'")
-    st.write(f"S2 Content: '{auto_qty}'")
-    st.write(f"Start Date Detected: {start_date}")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
