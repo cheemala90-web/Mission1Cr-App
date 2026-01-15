@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Laser Point V11", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Laser Grid V12", layout="wide")
 
 st.markdown("""
     <style>
@@ -18,15 +18,26 @@ st.markdown("""
         border-bottom: 5px solid #ff7043; text-align: center; margin-bottom: 30px; 
     }
     .header-box h1 { color: white !important; margin: 0; font-size: 26px; }
+
+    /* ORANGE BUTTONS */
     button[kind="primaryFormSubmit"], .stButton > button {
         background-color: #ff7043 !important; color: white !important;
         border: none !important; width: 100% !important; height: 50px !important;
         font-weight: bold !important; font-size: 18px !important; border-radius: 8px !important;
     }
-    .prog-container { padding: 20px; border: 2.5px solid #ff7043 !important; border-radius: 12px; margin-bottom: 30px; }
+
+    /* PROGRESS BAR - ORANGE BORDER */
+    .prog-container { 
+        padding: 20px; border: 2.5px solid #ff7043 !important; 
+        border-radius: 12px; margin-bottom: 30px; 
+    }
+
+    /* STATS CARDS */
     .stats-card { background: #f8f9fa; padding: 15px; border: 1px solid #ddd; border-radius: 10px; text-align: center; margin-bottom: 15px; }
     .stats-lbl { color: #666; font-size: 11px; font-weight: bold; text-transform: uppercase; }
     .stats-val { color: #003366; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
+    
+    /* GREEN SPEED TEXT */
     .stats-sub { font-size: 11px; color: #2ea043 !important; font-weight: 800 !important; margin-top: 4px; display: block; }
     div[data-baseweb="input"] > div { border: 2px solid #333333 !important; }
     </style>
@@ -36,6 +47,7 @@ st.markdown("""
 # 2. AUTHENTICATION
 # ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
+
 if 'auth' not in st.session_state:
     st.session_state.update({'auth': False, 'sid': None, 'name': None})
 
@@ -59,7 +71,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (FIXED INDEX FOCUS)
+# 3. DATA ENGINE (LASER GRID FETCH)
 # ==========================================
 try:
     if "SERVICE_ACCOUNT_JSON" in st.secrets:
@@ -70,30 +82,33 @@ try:
     sh = gc.open_by_key(st.session_state.sid)
     h_ws, s_ws, st_ws, mp_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%"), sh.worksheet("MONTHLY PERFORMANCE")
 
+    # Fetching Data
     h_data = h_ws.get_all_values()
     s_data = s_ws.get_all_values()
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
-    # --- LASER POINT BUY LOGIC ---
+    # --- THE LASER GRID FETCH (DIRECT COORDINATES) ---
+    # Hum seedha cell coordinates hit kar rahe hain bina array ke
     auto_stock_code = ""
     auto_qty = "0"
-    skips = ["", "0", "0.00", "#N/A", "NONE", "FALSE", "BUY DATE", "STOCK", "CODE", "SYMBOL", "CMP", "QUANTITY", "NOTIONAL P/L% ON AVG PRC", "AVG PRC"]
+    
+    # Coordinates to Check
+    try:
+        p2_val = h_ws.acell('P2').value or ""
+        s2_val = h_ws.acell('S2').value or "0"
+        q6_val = h_ws.acell('Q6').value or ""
+        t6_val = h_ws.acell('T6').value or "0"
 
-    # Check P2 First (Row Index 1, Col Index 15)
-    p2_val = h_data[1][15].strip() if len(h_data) > 1 and len(h_data[1]) > 15 else ""
-    s2_val = h_data[1][18].strip() if len(h_data) > 1 and len(h_data[1]) > 18 else "0"
+        skips = ["", "0", "0.00", "#N/A", "NONE", "FALSE", "BUY DATE", "STOCK", "CODE", "SYMBOL", "CMP", "QUANTITY"]
 
-    # Check Q6 (Row Index 5, Col Index 16)
-    q6_val = h_data[5][16].strip() if len(h_data) > 5 and len(h_data[5]) > 16 else ""
-    t6_val = h_data[5][19].strip() if len(h_data) > 5 and len(h_data[5]) > 19 else "0"
+        if p2_val.strip() and p2_val.strip().upper() not in skips:
+            auto_stock_code, auto_qty = p2_val.strip(), s2_val.strip()
+        elif q6_val.strip() and q6_val.strip().upper() not in skips:
+            auto_stock_code, auto_qty = q6_val.strip(), t6_val.strip()
+    except: pass
 
-    if p2_val and p2_val.upper() not in skips:
-        auto_stock_code, auto_qty = p2_val, s2_val
-    elif q6_val and q6_val.upper() not in skips:
-        auto_stock_code, auto_qty = q6_val, t6_val
-
-    # Core Stats
+    # Stats Engine
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     progress_count = len([r[10] for r in st_data[2:] if len(r) > 10 and r[10].strip() != ""])
     sold_steps_count = len([r[2] for r in s_data[4:] if len(r) > 2 and r[2].strip() != ""])
@@ -120,7 +135,8 @@ try:
     else:
         time_display = "Start Trading"; speed_text = "0 Steps Done"
 
-    h_target_row = next((i+1 for i, v in enumerate([r[0] for r in h_data]) if i >= 11 and not v.strip()), len(h_data)+1)
+    h_col_a = [row[0] for row in h_data]
+    h_target_row = next((i+1 for i, v in enumerate(h_col_a) if i >= 11 and not v.strip()), len(h_data)+1)
     ow_row = next((i+1 for i, r in enumerate(st_data) if i >= 2 and len(r) > 9 and r[9].strip().isdigit()), 3)
 
 except Exception as e:
@@ -149,7 +165,8 @@ c1, c2, c3, c4, c5, c6 = st.columns(6)
 p_row = mp_data[1] if len(mp_data) > 1 else []
 metrics = [(c1, "Steps Completed", sold_steps_count, "#2ea043"), (c2, "AI Time Left", time_display, "#003366"), (c3, "Monthly P%", p_row[3] if len(p_row)>3 else "0%", "#003366"), (c4, "Remaining Steps", (457-sold_steps_count), "#d93025"), (c5, "Pocket %", p_row[5] if len(p_row)>5 else "0%", "#003366"), (c6, "Annualized", p_row[6] if len(p_row)>6 else "0%", "#003366")]
 for col, lbl, val, color in metrics:
-    col.markdown(f'<div class="stats-card"><span class="stats-lbl">{lbl}</span><br><span class="stats-val" style="color:{color}">{val}</span><span class="stats-sub">{speed_text if lbl=="AI Time Left" else ""}</span></div>', unsafe_allow_html=True)
+    sub = speed_text if lbl == "AI Time Left" else ""
+    col.markdown(f'<div class="stats-card"><span class="stats-lbl">{lbl}</span><br><span class="stats-val" style="color:{color}">{val}</span><span class="stats-sub">{sub}</span></div>', unsafe_allow_html=True)
 
 # ==========================================
 # 5. ACTION TERMINAL
@@ -191,9 +208,13 @@ with cs:
                     st.balloons(); st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else: st.info("No Active Sells.")
 
-with st.expander("🛠️ Final Laser Diagnostic"):
-    st.write(f"P2 (Fix): '{p2_val}' | S2 (Fix): '{s2_val}'")
-    st.write(f"Q6 (Fix): '{q6_val}' | T6 (Fix): '{t6_val}'")
-    st.write(f"Result: {auto_stock_code} ({auto_qty})")
+# --- THE X-RAY GRID (IF EVERYTHING ELSE FAILS) ---
+with st.expander("🛠️ Final System Grid Diagnostic"):
+    # Scanning a 10x10 area around where Buy signal should be
+    grid_area = h_ws.get('N1:T7')
+    st.write("Current API Grid View (N1 to T7):")
+    st.table(grid_area)
+    st.write(f"Direct acell('P2'): '{p2_val}'")
+    st.write(f"Direct acell('Q6'): '{q6_val}'")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
