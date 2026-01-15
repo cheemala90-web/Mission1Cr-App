@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Final Fix V6", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Final Terminal", layout="wide")
 
 st.markdown("""
     <style>
@@ -24,6 +24,7 @@ st.markdown("""
         background-color: #ff7043 !important; color: white !important;
         border: none !important; width: 100% !important; height: 50px !important;
         font-weight: bold !important; font-size: 18px !important; border-radius: 8px !important;
+        box-shadow: 0 4px 6px rgba(255, 112, 67, 0.3) !important;
     }
 
     /* PROGRESS BAR - ORANGE BORDER */
@@ -78,7 +79,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V6 HEADER-PROOF)
+# 3. DATA ENGINE (LASER FOCUS FETCH)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -90,23 +91,29 @@ try:
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
 
-    # --- THE SMART SCANNER (SKIPS HEADERS) ---
+    # --- THE LASER FETCH (CHECKING MULTIPLE SOURCES) ---
     auto_stock_code = ""
     auto_qty = "0"
+
+    # Strategy: Fetch all 4 cells in one batch
+    cells = h_ws.batch_get(['P2', 'S2', 'Q6', 'T6'], value_render_option='FORMATTED_VALUE')
     
-    # Column P (16) and S (19)
-    col_p = h_ws.col_values(16, value_render_option='FORMATTED_VALUE')
-    col_s = h_ws.col_values(19, value_render_option='FORMATTED_VALUE')
-    
-    # Exclusion List (Headers to skip)
-    skips = ["", "0", "NONE", "FALSE", "#N/A", "STOCK", "BUY DATE", "CODE", "SYMBOL", "CMP", "QUANTITY"]
-    
-    for i in range(1, len(col_p)):
-        val = str(col_p[i]).strip()
-        if val and val.upper() not in skips:
-            auto_stock_code = val
-            auto_qty = str(col_s[i]).strip() if i < len(col_s) else "0"
-            break
+    val_p2 = str(cells[0][0][0]).strip() if cells[0] else ""
+    val_s2 = str(cells[1][0][0]).strip() if cells[1] else "0"
+    val_q6 = str(cells[2][0][0]).strip() if cells[2] else ""
+    val_t6 = str(cells[3][0][0]).strip() if cells[3] else "0"
+
+    # List of bad strings to ignore
+    skips = ["", "0", "0.00", "#N/A", "NONE", "FALSE", "BUY DATE", "STOCK", "CODE", "SYMBOL", "CMP", "NOTIONAL P/L% ON AVG PRC"]
+
+    # Try Pair 1 (P2, S2)
+    if val_p2.upper() not in skips:
+        auto_stock_code = val_p2
+        auto_qty = val_s2
+    # Try Pair 2 (Q6, T6) if Pair 1 failed
+    elif val_q6.upper() not in skips:
+        auto_stock_code = val_q6
+        auto_qty = val_t6
 
     # Core Stats
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
@@ -115,7 +122,7 @@ try:
     sold_steps_count = len([r[2] for r in s_data[4:] if len(r) > 2 and r[2].strip() != ""])
     remaining_steps = 457 - sold_steps_count
 
-    # AI TIME CALCULATION (FIXED)
+    # AI TIME CALCULATION
     start_date = None
     if len(s_data) > 4:
         for row in s_data[4:]:
@@ -132,16 +139,14 @@ try:
         days_passed = max((date.today() - start_date).days, 1)
         velocity = sold_steps_count / days_passed
         days_needed = remaining_steps / velocity
-        
         y, r = divmod(days_needed, 365); m, d = divmod(r, 30)
         time_display = f"{int(y)}Y {int(m)}M {int(d)}D"
-        
         py, pr = divmod(days_passed, 365); pm, pd = divmod(pr, 30)
         speed_text = f"{sold_steps_count} steps in {int(py)}Y {int(pm)}M {int(pd)}D"
     else:
-        time_display = "Start Trading"; speed_text = "0 Steps Completed"
+        time_display = "Start Trading"; speed_text = "0 Steps Done"
 
-    # Helpers
+    # Saving Helpers
     h_col_a = [row[0] for row in h_data]
     h_target_row = next((i+1 for i, v in enumerate(h_col_a) if i >= 11 and not v.strip()), len(h_col_a)+1)
     ow_row = next((i+1 for i, r in enumerate(st_data) if i >= 2 and len(r) > 9 and r[9].strip().isdigit()), 3)
@@ -171,14 +176,7 @@ st.markdown(f"""
 
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 p_row = mp_data[1] if len(mp_data) > 1 else []
-metrics = [
-    (c1, "Steps Completed", sold_steps_count, "#2ea043"), 
-    (c2, "AI Time Left", time_display, "#003366"), 
-    (c3, "Monthly P%", p_row[3] if len(p_row)>3 else "0%", "#003366"), 
-    (c4, "Remaining Steps", remaining_steps, "#d93025"), 
-    (c5, "Pocket %", p_row[5] if len(p_row)>5 else "0%", "#003366"), 
-    (c6, "Annualized", p_row[6] if len(p_row)>6 else "0%", "#003366")
-]
+metrics = [(c1, "Steps Completed", sold_steps_count, "#2ea043"), (c2, "AI Time Left", time_display, "#003366"), (c3, "Monthly P%", p_row[3] if len(p_row)>3 else "0%", "#003366"), (c4, "Remaining Steps", remaining_steps, "#d93025"), (c5, "Pocket %", p_row[5] if len(p_row)>5 else "0%", "#003366"), (c6, "Annualized", p_row[6] if len(p_row)>6 else "0%", "#003366")]
 for col, lbl, val, color in metrics:
     sub = speed_text if lbl == "AI Time Left" else ""
     col.markdown(f'<div class="stats-card"><span class="stats-lbl">{lbl}</span><br><span class="stats-val" style="color:{color}">{val}</span><span class="stats-sub">{sub}</span></div>', unsafe_allow_html=True)
@@ -187,7 +185,7 @@ for col, lbl, val, color in metrics:
 # 5. ACTION TERMINAL
 # ==========================================
 st.write("---")
-is_buy_active = auto_stock_code.upper() not in ["", "0", "0.00", "#N/A", "NONE", "FALSE", "TRADING..."]
+is_buy_active = auto_stock_code != ""
 s_idx = next((i + 12 for i, r in enumerate(h_data[11:]) if len(r) > 12 and r[12].strip()), None)
 
 cb, cs = st.columns(2)
@@ -202,6 +200,7 @@ with cb:
                 qty = st.number_input("Confirm Qty", value=q_val)
                 prc = st.number_input("Execution Price", format="%.2f")
                 if st.form_submit_button("✅ EXECUTE BUY"):
+                    # Use Row 6 as template for save columns
                     orig = h_ws.get('O6:T6')[0] 
                     orig[2], orig[4], orig[5] = auto_stock_code, prc, qty
                     h_ws.update(f'A{h_target_row}:F{h_target_row}', [orig], value_input_option='USER_ENTERED')
@@ -222,5 +221,11 @@ with cs:
                     s_ws.append_row(live, value_input_option='USER_ENTERED'); h_ws.delete_rows(s_idx)
                     st.balloons(); st.success("Profit Booked!"); time.sleep(1); st.rerun()
         else: st.info("No Active Sells. Hold tight!")
+
+# --- FINAL DEBUGGER ---
+with st.expander("🛠️ Final Cell Diagnostic"):
+    st.write(f"P2: '{val_p2}' | S2: '{val_s2}'")
+    st.write(f"Q6: '{val_q6}' | T6: '{val_t6}'")
+    st.write(f"Result: Code='{auto_stock_code}', Qty='{auto_qty}'")
 
 st.caption(f"Terminal Active | User: {st.session_state.name}")
