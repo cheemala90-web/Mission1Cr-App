@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V23", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V24", layout="wide")
 
 st.markdown("""
     <style>
@@ -73,7 +73,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (COLUMN HUNTER)
+# 3. DATA ENGINE (V24: GRAB ANYTHING)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -87,41 +87,40 @@ try:
     mp_data = mp_ws.get_all_values()
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- V23: COLUMN HUNTER STRATEGY ---
+    # --- V24: INTELLIGENT SCANNER ---
     auto_stock_code = ""
     auto_qty = "0"
-    found_at_row = "None"
+    debug_log = [] # To show user what we see
     
     try:
-        # Fetch ENTIRE Column Q (Index 17) and T (Index 20)
-        # Using col_values is safer as it gets everything
-        col_q = h_ws.col_values(17) # Column Q
+        # Fetch Cells Q5 to Q15 (Where stock usually appears)
+        # Column Q is Index 17 (in 1-based) or 16 (in 0-based)
+        # Let's pull a specific range to be safe
+        raw_scan = h_ws.get('Q5:Q15') # List of lists [['NSE:INDIGO'], [''], ['']]
         
-        # Start searching from Row 5 (Index 4) downwards
-        # We limit search to first 20 rows to keep it fast
-        search_limit = min(len(col_q), 20)
-        
-        for i in range(4, search_limit):
-            val = str(col_q[i]).strip()
-            # Strict Check: Must contain "NSE:"
-            if "NSE:" in val.upper():
-                auto_stock_code = val
-                found_at_row = i + 1 # Row number (1-based)
+        row_offset = 5 # Starting row
+        for i, row in enumerate(raw_scan):
+            if len(row) > 0:
+                val = str(row[0]).strip()
+                debug_log.append(f"Row {row_offset+i}: '{val}'")
                 
-                # Now fetch Quantity from same row, Column T (Index 20)
-                # We fetch specifically that cell to be accurate
-                try:
-                    # Column T is the 20th column
-                    qty_cell = h_ws.cell(found_at_row, 20).value
-                    if qty_cell and str(qty_cell).strip().isdigit():
-                        auto_qty = str(qty_cell).strip()
-                except:
-                    auto_qty = "0"
-                
-                break # Stop at first match
-                
+                # LOGIC: Must not be empty, and not a pure number
+                # Also ignore common headers if any
+                if val and val not in ["", "#N/A", "0", "FALSE"]:
+                    # Is it a stock? (Usually contains letters)
+                    if any(c.isalpha() for c in val):
+                        auto_stock_code = val
+                        
+                        # Now find quantity in Column T of the SAME ROW
+                        try:
+                            t_val = h_ws.cell(row_offset+i, 20).value # Col T is 20
+                            if t_val and str(t_val).strip().replace('.','').isdigit():
+                                auto_qty = str(t_val).strip()
+                        except: auto_qty = "0"
+                        
+                        break # Found it!
     except Exception as e:
-        st.error(f"Hunter Error: {e}")
+        st.error(f"Scanner Error: {e}")
 
     # Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
@@ -214,7 +213,7 @@ with c_buy:
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
                         raw_vals = h_ws.get('O6:T6')[0] # Template
-                        # Check Prefix
+                        # Ensure Prefix
                         write_stock = auto_stock_code
                         if "NSE:" not in write_stock.upper() and "BSE:" not in write_stock.upper():
                             write_stock = "NSE:" + write_stock
@@ -227,19 +226,17 @@ with c_buy:
                         st_ws.update_cell(ow_row, 10, write_stock); st_ws.update_cell(ow_row, 11, b_price); st_ws.update_cell(ow_row, 23, str(date.today()))
                         st.balloons(); st.success("Buy Saved!"); time.sleep(1); st.rerun()
         else: 
-            st.info("No Active Signal Found.")
-            # DIAGNOSTIC
-            with st.expander("🔍 Deep Scan Report"):
-                st.write(f"Scanned Column Q (Rows 5-20).")
-                if found_at_row != "None":
-                    st.write(f"Found 'NSE:' at Row: **{found_at_row}**")
-                    st.write(f"Value: **{auto_stock_code}**")
+            st.info("Nothing to buy today.")
+            # DIAGNOSTIC TOOL V3 (X-Ray)
+            with st.expander("🔍 X-RAY REPORT (Raw Data from Google)"):
+                st.write("Code searched Column Q (Rows 5-15). Here is what it saw:")
+                if debug_log:
+                    for line in debug_log:
+                        st.text(line)
                 else:
-                    st.write("Result: No 'NSE:' tag found in the list.")
-                    st.write("Tip: Agar Sheet mein dikh raha hai, toh 1 min ruk kar refresh karein.")
-            
-            if st.button("🔄 Force Refresh Data"):
-                st.rerun()
+                    st.write("Google returned EMPTY list. Trying waiting 30 seconds.")
+                st.write("---")
+                st.write("**Interpretation:** If you see 'Row X: ' (empty quote), it means Google API thinks the cell is empty. Type in the cell again and press Enter.")
 
 with c_sell:
     with st.container(border=True):
