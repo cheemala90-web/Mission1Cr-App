@@ -4,11 +4,12 @@ import pandas as pd
 from datetime import date, datetime
 import time
 import json
+import toml
 
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Final V15", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
 
 st.markdown("""
     <style>
@@ -92,23 +93,30 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION (AUTO-FIX)
+# 2. AUTHENTICATION (FAIL-SAFE MODE)
 # ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
 
 try:
     if "SERVICE_ACCOUNT_JSON" in st.secrets:
-        # Load Raw Secret
+        # --- THE FIX: Handle Dict vs String ---
         raw_secret = st.secrets["SERVICE_ACCOUNT_JSON"]
         
-        # Determine if Dict or String and Convert
         if isinstance(raw_secret, dict):
-            key_dict = dict(raw_secret) # Create a copy
+            # Already a dict (TOML format working correctly)
+            key_dict = dict(raw_secret)
+        elif isinstance(raw_secret, str):
+            # It's a string, try parsing as JSON
+            try:
+                key_dict = json.loads(raw_secret)
+            except json.JSONDecodeError:
+                st.error("Secrets Error: Data is not valid JSON or TOML. Please check formatting.")
+                st.stop()
         else:
-            key_dict = json.loads(raw_secret)
-            
-        # --- CRITICAL FIX: Clean Private Key ---
-        # Converts literal "\n" strings to actual newlines
+            # Fallback for weird objects
+            key_dict = dict(raw_secret)
+
+        # Fix Private Key Newlines
         if "private_key" in key_dict:
             key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
             
@@ -117,6 +125,7 @@ try:
         gc = gspread.service_account(filename="service_key.json")
 except Exception as e:
     st.error(f"Config Error: {e}")
+    st.info("Tip: Delete everything in Secrets and paste the provided TOML block.")
     st.stop()
 
 if 'auth' not in st.session_state:
@@ -316,7 +325,7 @@ with c_buy:
                 # Orange Button
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        # Use Row 6 as template for writing (ensures formatting)
+                        # Use Row 6 as template for writing
                         raw_vals = h_ws.get('O6:T6')[0]
                         raw_vals[2] = auto_stock_code 
                         raw_vals[4] = b_price      
