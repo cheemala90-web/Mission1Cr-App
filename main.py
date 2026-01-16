@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V31", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V32", layout="wide")
 
 st.markdown("""
     <style>
@@ -73,7 +73,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V31: SMART RANGE Q2 + Q5-Q8)
+# 3. DATA ENGINE (V32: Q2 + Q5-Q11)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -88,14 +88,14 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- LOGIC START ---
+    # --- SCANNING LOGIC START ---
     auto_stock_code = ""
     auto_qty = "0"
     auto_price = "0.00"
-    debug_info = [] # For troubleshooting
+    debug_info = [] 
     found_signal = False
     
-    # --- 1. PRIORITY: CHECK Q2 (Row 2 / Index 1) ---
+    # --- PRIORITY 1: CHECK Q2 (Row 2 / Index 1) ---
     if len(h_data) > 1:
         row_2 = h_data[1]
         if len(row_2) > 16:
@@ -115,11 +115,12 @@ try:
                 
                 found_signal = True 
 
-    # --- 2. SECONDARY: CHECK RANGE Q5 to Q8 (Rows 5, 6, 7, 8) ---
-    # Hum Row 12 tak nahi jayenge, sirf Row 8 tak limit rahenge.
+    # --- PRIORITY 2: CHECK RANGE Q5 to Q11 (Rows 5 to 11) ---
+    # Hum Row 12 ko touch nahi karenge. 
+    # Indices: Row 5 is index 4. Row 11 is index 10.
     if not found_signal and len(h_data) > 4:
-        # Scan indices 4, 5, 6, 7 (Rows 5, 6, 7, 8)
-        search_rows = h_data[4:8] 
+        search_rows = h_data[4:11] # Slices index 4 up to (but not including) 11. Wait, need up to 11.
+        # Python slice [4:11] gives indices 4,5,6,7,8,9,10. Correct.
         
         for i, row in enumerate(search_rows):
             actual_row_num = i + 5
@@ -139,7 +140,8 @@ try:
                         val_t = str(row[19]).strip()
                         if val_t.replace('.','').isdigit(): auto_qty = val_t
                     
-                    break # Stop as soon as we find match in Q5, Q6, Q7, or Q8
+                    found_signal = True
+                    break 
 
     # --- DYNAMIC TOTAL STEPS ---
     total_steps_list = [r[0] for r in st_data[2:] if len(r) > 0 and r[0].strip() != ""]
@@ -234,6 +236,7 @@ with c_buy:
         if is_buy_active:
             with st.form("buy_form"):
                 confirmed_stock_code = st.text_input("Stock Code (Editable)", value=auto_stock_code)
+                
                 try: q_val = int(float(auto_qty.replace(',','')))
                 except: q_val = 0
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
@@ -244,6 +247,7 @@ with c_buy:
                 
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
+                        # Get Template Row
                         raw_vals = h_ws.get('O6:T6')[0]
                         raw_vals[2] = confirmed_stock_code
                         raw_vals[4] = b_price
@@ -255,13 +259,11 @@ with c_buy:
                         st.balloons(); st.success(f"Buy Saved for {confirmed_stock_code}!"); time.sleep(1); st.rerun()
         else: 
             st.info("Nothing to buy today. Come back tomorrow!")
-            # DEBUGGER: Only visible if Nothing Found
-            with st.expander("🔍 Debugging (Why no stock?)"):
-                st.write("**Scanned Cells (Look here):**")
-                for info in debug_info:
-                    st.write(info)
-                st.write("---")
-                st.write("*Note: Checking Q2 first, then Q5, Q6, Q7, Q8. Stopping before Q9.*")
+            # DEBUGGER
+            with st.expander("🔍 Debugging (Range Check)"):
+                st.write(f"Scanned Q2: {len(debug_info) > 0 and debug_info[0] or 'Blank'}")
+                st.write(f"Scanned Q5-Q11: {debug_info[1:]}")
+                st.write("Stopped before Q12 (Historical Data).")
 
 with c_sell:
     with st.container(border=True):
