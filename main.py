@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V26", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
 
 st.markdown("""
     <style>
@@ -26,7 +26,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION
+# 2. AUTHENTICATION (KEY DOCTOR MODE)
 # ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
 
@@ -40,7 +40,7 @@ try:
         else: key_dict = dict(raw_secret)
 
         if "private_key" in key_dict:
-            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
+            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n").strip('"').strip("'")
             
         gc = gspread.service_account_from_dict(key_dict)
     else:
@@ -73,57 +73,34 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (STRICT Q6 ONLY)
+# 3. DATA ENGINE
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
     h_ws, s_ws, st_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%")
     mp_ws = sh.worksheet("MONTHLY PERFORMANCE")
 
-    # Fetch Data
     h_data = h_ws.get_all_values()
     s_data = s_ws.get_all_values()
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
+
+    # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- V26: STRICT Q6 ONLY ---
-    auto_stock_code = ""
-    auto_qty = "0"
+    # X-Ray Scanner (For Default Values)
+    auto_stock_code = ""; auto_qty = "0"
+    for row_idx, row in enumerate(h_data):
+        if row_idx > 15: break 
+        for col_idx, cell_val in enumerate(row):
+            if "NSE:" in str(cell_val).upper():
+                auto_stock_code = cell_val.strip()
+                if len(row) > 18 and row[18].strip().isdigit(): auto_qty = row[18].strip()
+                elif len(row) > 19 and row[19].strip().isdigit(): auto_qty = row[19].strip()
+                elif len(row) > col_idx + 3: auto_qty = row[col_idx + 3]
+                break
+        if auto_stock_code: break
     
-    # IGNORE LIST (Just in case Q6 has a header)
-    IGNORE_LIST = ["NEXT BID LEVEL", "STOCK", "QTY", "PRICE", "TARGET", "SL", "LTP", "BUY", "SELL", "DATE"]
-    
-    try:
-        # Fetch ONLY Row 6, Columns Q to T (Indices 17 to 20 in A1 notation)
-        # Q is 17th letter, T is 20th letter.
-        # In batch get, Q6 is the first cell.
-        raw_row = h_ws.get('Q6:T6') # Returns [['NSE:INDIGO', ..., ..., '10']]
-        
-        if raw_row and len(raw_row) > 0 and len(raw_row[0]) > 0:
-            val = str(raw_row[0][0]).strip() # This is Q6
-            val_upper = val.upper()
-
-            # Validation Logic
-            is_valid = True
-            if val_upper in ["", "0", "#N/A", "FALSE", "TRUE"]: is_valid = False
-            if any(x in val_upper for x in IGNORE_LIST): is_valid = False # Block Headers
-            if not any(c.isalpha() for c in val): is_valid = False # Must have letters
-            
-            if is_valid:
-                auto_stock_code = val
-                
-                # Fetch Quantity from T6 (Index 3 in the range Q,R,S,T)
-                if len(raw_row[0]) > 3:
-                    t_val = str(raw_row[0][3]).strip()
-                    if t_val.replace('.','').isdigit():
-                        auto_qty = t_val
-                else:
-                    auto_qty = "0"
-                    
-    except Exception as e:
-        st.error(f"Scanner Error: {e}")
-
     # Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
     progress_count = len([x for x in k_vals if x.strip() != ""])
@@ -195,7 +172,8 @@ for col, lbl, val, color_type in metrics:
 # 5. ACTION TERMINAL
 # ==========================================
 st.write("---")
-is_buy_active = auto_stock_code != ""
+# Basic check to enable form
+is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
 is_sell_active = s_idx is not None
@@ -207,29 +185,35 @@ with c_buy:
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
         if is_buy_active:
             with st.form("buy_form"):
-                st.markdown(f"**Stock:** {auto_stock_code}")
+                # --- CHANGE IS HERE: Stock Code is now a Text Input (Editable) ---
+                confirmed_stock_code = st.text_input("Stock Code (Editable)", value=auto_stock_code)
+                
                 try: q_val = int(float(auto_qty.replace(',','')))
                 except: q_val = 0
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
                 b_price = st.number_input("Exec Price", format="%.2f")
+                
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        raw_vals = h_ws.get('O6:T6')[0] # Template
-                        # Ensure Prefix
-                        write_stock = auto_stock_code
-                        if "NSE:" not in write_stock.upper() and "BSE:" not in write_stock.upper():
-                            write_stock = "NSE:" + write_stock
+                        # Get Template Row
+                        raw_vals = h_ws.get('O6:T6')[0]
                         
-                        raw_vals[2] = write_stock
-                        raw_vals[4] = b_price      
-                        raw_vals[5] = final_qty    
+                        # --- CRITICAL FIX: Use the 'confirmed_stock_code' from the input, NOT auto_stock_code ---
+                        raw_vals[2] = confirmed_stock_code  # Uses user-edited/confirmed value
+                        raw_vals[4] = b_price
+                        raw_vals[5] = final_qty
                         
+                        # Update Holding Sheet
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
-                        st_ws.update_cell(ow_row, 10, write_stock); st_ws.update_cell(ow_row, 11, b_price); st_ws.update_cell(ow_row, 23, str(date.today()))
-                        st.balloons(); st.success("Buy Saved!"); time.sleep(1); st.rerun()
-        else: 
-            st.info("Nothing to buy today.")
-            
+                        
+                        # Update Tracking Sheet
+                        st_ws.update_cell(ow_row, 10, confirmed_stock_code)
+                        st_ws.update_cell(ow_row, 11, b_price)
+                        st_ws.update_cell(ow_row, 23, str(date.today()))
+                        
+                        st.balloons(); st.success(f"Buy Saved for {confirmed_stock_code}!"); time.sleep(1); st.rerun()
+        else: st.info("Nothing to buy today. Come back tomorrow!")
+
 with c_sell:
     with st.container(border=True):
         st.markdown(f"<h3 style='color:#d93025; margin-top:0; text-align:center;'>🔻 SELL TASK</h3>", unsafe_allow_html=True)
