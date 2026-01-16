@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V34", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
 
 st.markdown("""
     <style>
@@ -22,7 +22,6 @@ st.markdown("""
     .stats-val { color: #003366; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
     .stats-sub { font-size: 11px; color: #2ea043 !important; font-weight: 800 !important; margin-top: 4px; display: block; }
     div[data-baseweb="input"] > div { border: 2px solid #333333 !important; }
-    div[role="radiogroup"] { background: #e8f5e9; padding: 10px; border-radius: 8px; border: 1px solid #2ea043; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -74,7 +73,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (DUAL DETECTOR)
+# 3. DATA ENGINE
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -89,39 +88,33 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- LOGIC: FIND BOTH SIGNALS ---
+    # --- FIXED LOGIC: STRICTLY CHECK Q6 ---
+    # Hum 'loop' ya 'scanner' use nahi karenge jo C12 tak pahunch jaye.
+    # Hum seedha Row 6 (Index 5) ke Q aur T columns ko target karenge.
     
-    # Holder for Signal 1 (Q2)
-    sig1 = {"code": None, "price": "0.00", "qty": "0", "source": "Q2 (First Buy)"}
+    auto_stock_code = ""
+    auto_qty = "0"
     
-    # Holder for Signal 2 (Q5-Q20)
-    sig2 = {"code": None, "price": "0.00", "qty": "0", "source": "Scanner (Next Buy)"}
-    
-    # 1. CHECK Q2
-    if len(h_data) > 1:
-        r2 = h_data[1]
-        if len(r2) > 16:
-            val = str(r2[16]).strip()
-            if val and ("NSE:" in val.upper() or "BSE:" in val.upper()):
-                sig1["code"] = val
-                if len(r2) > 18: sig1["price"] = str(r2[18]).strip()
-                if len(r2) > 19: sig1["qty"] = str(r2[19]).strip()
-
-    # 2. CHECK Q5-Q20 (Scanner)
-    if len(h_data) > 4:
-        # Scan Row 5 to 20
-        scan_rows = h_data[4:21]
-        for i, row in enumerate(scan_rows):
-            actual_row = i + 5
-            if len(row) > 16:
-                val = str(row[16]).strip()
-                # Strict check to ensure we don't pick garbage
-                if val and ("NSE:" in val.upper() or "BSE:" in val.upper()):
-                    sig2["code"] = val
-                    sig2["source"] = f"Found at Q{actual_row}" # Tell user where we found it
-                    if len(row) > 18: sig2["price"] = str(row[18]).strip()
-                    if len(row) > 19: sig2["qty"] = str(row[19]).strip()
-                    break # Stop at first find
+    # Check if Row 6 exists
+    if len(h_data) > 5:
+        row_6 = h_data[5] # Index 5 is Row 6
+        
+        # Column Q is Index 16 (A=0, ..., Q=16)
+        # Column T is Index 19
+        
+        if len(row_6) > 16:
+            val_q6 = str(row_6[16]).strip()
+            
+            # Sirf tab uthao agar usme "NSE:" ya "BSE:" likha ho
+            # Aur wo koi purana stock na ho
+            if val_q6 and ("NSE:" in val_q6.upper() or "BSE:" in val_q6.upper()):
+                auto_stock_code = val_q6
+                
+                # Agar Stock mila, tabhi Quantity dhoondo
+                if len(row_6) > 19:
+                    val_t6 = str(row_6[19]).strip()
+                    if val_t6.replace('.','').isdigit():
+                        auto_qty = val_t6
 
     # --- DYNAMIC TOTAL STEPS ---
     total_steps_list = [r[0] for r in st_data[2:] if len(r) > 0 and r[0].strip() != ""]
@@ -133,6 +126,7 @@ try:
     progress_count = len([x for x in k_vals if x.strip() != ""])
     progress_pct = min((progress_count / TOTAL_STEPS) * 100, 100)
     
+    # Sold Count
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
@@ -203,7 +197,8 @@ for col, lbl, val, color_type in metrics:
 # 5. ACTION TERMINAL
 # ==========================================
 st.write("---")
-
+# Basic check to enable form
+is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
 is_sell_active = s_idx is not None
@@ -213,42 +208,13 @@ c_buy, c_sell = st.columns(2)
 with c_buy:
     with st.container(border=True):
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
-        
-        # --- SELECTION LOGIC ---
-        active_signal = None
-        
-        # Case 1: Both exist
-        if sig1["code"] and sig2["code"]:
-            st.info("💡 Two Signals Found. Choose one to execute.")
-            choice = st.radio("Select Source:", [f"First Buy: {sig1['code']}", f"Next Buy: {sig2['code']}"])
-            if "First Buy" in choice: active_signal = sig1
-            else: active_signal = sig2
-            
-        # Case 2: Only Sig 1 exists
-        elif sig1["code"]:
-            active_signal = sig1
-            st.caption(f"Source: {active_signal['source']}")
-            
-        # Case 3: Only Sig 2 exists
-        elif sig2["code"]:
-            active_signal = sig2
-            st.caption(f"Source: {active_signal['source']}")
-            
-        # Render Form
-        if active_signal:
+        if is_buy_active:
             with st.form("buy_form"):
-                # Editable Code
-                confirmed_stock_code = st.text_input("Stock Code (Editable)", value=active_signal["code"])
-                
-                # Qty
-                try: q_val = int(float(active_signal["qty"].replace(',','')))
+                confirmed_stock_code = st.text_input("Stock Code (Editable)", value=auto_stock_code)
+                try: q_val = int(float(auto_qty.replace(',','')))
                 except: q_val = 0
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
-                
-                # Price
-                try: p_val = float(active_signal["price"].replace(',',''))
-                except: p_val = 0.0
-                b_price = st.number_input("Exec Price", value=p_val, format="%.2f")
+                b_price = st.number_input("Exec Price", format="%.2f")
                 
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
@@ -261,8 +227,7 @@ with c_buy:
                         st_ws.update_cell(ow_row, 11, b_price)
                         st_ws.update_cell(ow_row, 23, str(date.today()))
                         st.balloons(); st.success(f"Buy Saved for {confirmed_stock_code}!"); time.sleep(1); st.rerun()
-        else:
-            st.info("Nothing to buy today. Come back tomorrow!")
+        else: st.info("Nothing to buy today. Come back tomorrow!")
 
 with c_sell:
     with st.container(border=True):
