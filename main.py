@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V30", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V31", layout="wide")
 
 st.markdown("""
     <style>
@@ -73,7 +73,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V30: DUAL SLOT LOGIC)
+# 3. DATA ENGINE (V31: SMART RANGE Q2 + Q5-Q8)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -88,60 +88,58 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- DUAL SLOT LOGIC (Q2 First, Then Q6) ---
+    # --- LOGIC START ---
     auto_stock_code = ""
     auto_qty = "0"
     auto_price = "0.00"
-    
-    # Indices (0-based):
-    # Q=16, S=18, T=19
-    
+    debug_info = [] # For troubleshooting
     found_signal = False
     
-    # --- PRIORITY 1: CHECK Q2 (Row 2 -> Index 1) ---
+    # --- 1. PRIORITY: CHECK Q2 (Row 2 / Index 1) ---
     if len(h_data) > 1:
         row_2 = h_data[1]
         if len(row_2) > 16:
             val_q2 = str(row_2[16]).strip()
-            # Valid Check
+            debug_info.append(f"Q2: {val_q2}")
             if val_q2 and ("NSE:" in val_q2.upper() or "BSE:" in val_q2.upper()):
                 auto_stock_code = val_q2
                 
-                # Get Price from S2 (Index 18)
+                # S2 (Price)
                 if len(row_2) > 18:
                     val_s2 = str(row_2[18]).strip()
-                    if val_s2.replace('.','').replace(',','').isdigit():
-                        auto_price = val_s2
-                        
-                # Get Qty from T2 (Index 19)
+                    if val_s2.replace('.','').replace(',','').isdigit(): auto_price = val_s2
+                # T2 (Qty)
                 if len(row_2) > 19:
                     val_t2 = str(row_2[19]).strip()
-                    if val_t2.replace('.','').isdigit():
-                        auto_qty = val_t2
+                    if val_t2.replace('.','').isdigit(): auto_qty = val_t2
                 
-                found_signal = True # Stop here, don't check Q6
-    
-    # --- PRIORITY 2: CHECK Q6 (Row 6 -> Index 5) ---
-    # Sirf tab check karo agar Q2 mein kuch nahi mila
-    if not found_signal and len(h_data) > 5:
-        row_6 = h_data[5]
-        if len(row_6) > 16:
-            val_q6 = str(row_6[16]).strip()
-            
-            if val_q6 and ("NSE:" in val_q6.upper() or "BSE:" in val_q6.upper()):
-                auto_stock_code = val_q6
+                found_signal = True 
+
+    # --- 2. SECONDARY: CHECK RANGE Q5 to Q8 (Rows 5, 6, 7, 8) ---
+    # Hum Row 12 tak nahi jayenge, sirf Row 8 tak limit rahenge.
+    if not found_signal and len(h_data) > 4:
+        # Scan indices 4, 5, 6, 7 (Rows 5, 6, 7, 8)
+        search_rows = h_data[4:8] 
+        
+        for i, row in enumerate(search_rows):
+            actual_row_num = i + 5
+            if len(row) > 16:
+                val_q = str(row[16]).strip()
+                debug_info.append(f"Q{actual_row_num}: {val_q}")
                 
-                # Get Price from S6 (Index 18)
-                if len(row_6) > 18:
-                    val_s6 = str(row_6[18]).strip()
-                    if val_s6.replace('.','').replace(',','').isdigit():
-                        auto_price = val_s6
-                
-                # Get Qty from T6 (Index 19)
-                if len(row_6) > 19:
-                    val_t6 = str(row_6[19]).strip()
-                    if val_t6.replace('.','').isdigit():
-                        auto_qty = val_t6
+                if val_q and ("NSE:" in val_q.upper() or "BSE:" in val_q.upper()):
+                    auto_stock_code = val_q
+                    
+                    # S (Price)
+                    if len(row) > 18:
+                        val_s = str(row[18]).strip()
+                        if val_s.replace('.','').replace(',','').isdigit(): auto_price = val_s
+                    # T (Qty)
+                    if len(row) > 19:
+                        val_t = str(row[19]).strip()
+                        if val_t.replace('.','').isdigit(): auto_qty = val_t
+                    
+                    break # Stop as soon as we find match in Q5, Q6, Q7, or Q8
 
     # --- DYNAMIC TOTAL STEPS ---
     total_steps_list = [r[0] for r in st_data[2:] if len(r) > 0 and r[0].strip() != ""]
@@ -235,36 +233,35 @@ with c_buy:
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
         if is_buy_active:
             with st.form("buy_form"):
-                # Editable Code
                 confirmed_stock_code = st.text_input("Stock Code (Editable)", value=auto_stock_code)
-                
-                # Quantity (Auto-fetched)
                 try: q_val = int(float(auto_qty.replace(',','')))
                 except: q_val = 0
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
                 
-                # Price (Auto-fetched from S2/S6)
                 try: p_val = float(auto_price.replace(',',''))
                 except: p_val = 0.0
                 b_price = st.number_input("Exec Price", value=p_val, format="%.2f")
                 
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        # Get Template Row
                         raw_vals = h_ws.get('O6:T6')[0]
-                        
-                        # Use User Confirmed Values
                         raw_vals[2] = confirmed_stock_code
                         raw_vals[4] = b_price
                         raw_vals[5] = final_qty
-                        
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
                         st_ws.update_cell(ow_row, 10, confirmed_stock_code)
                         st_ws.update_cell(ow_row, 11, b_price)
                         st_ws.update_cell(ow_row, 23, str(date.today()))
-                        
                         st.balloons(); st.success(f"Buy Saved for {confirmed_stock_code}!"); time.sleep(1); st.rerun()
-        else: st.info("Nothing to buy today. Come back tomorrow!")
+        else: 
+            st.info("Nothing to buy today. Come back tomorrow!")
+            # DEBUGGER: Only visible if Nothing Found
+            with st.expander("🔍 Debugging (Why no stock?)"):
+                st.write("**Scanned Cells (Look here):**")
+                for info in debug_info:
+                    st.write(info)
+                st.write("---")
+                st.write("*Note: Checking Q2 first, then Q5, Q6, Q7, Q8. Stopping before Q9.*")
 
 with c_sell:
     with st.container(border=True):
