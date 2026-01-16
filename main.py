@@ -4,7 +4,6 @@ import pandas as pd
 from datetime import date, datetime
 import time
 import json
-import toml
 
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
@@ -93,30 +92,29 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION (FAIL-SAFE MODE)
+# 2. AUTHENTICATION (JWT REPAIR MODE)
 # ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
 
 try:
     if "SERVICE_ACCOUNT_JSON" in st.secrets:
-        # --- THE FIX: Handle Dict vs String ---
+        # Load the data
         raw_secret = st.secrets["SERVICE_ACCOUNT_JSON"]
         
+        # Handle Format (Dict vs String)
         if isinstance(raw_secret, dict):
-            # Already a dict (TOML format working correctly)
             key_dict = dict(raw_secret)
         elif isinstance(raw_secret, str):
-            # It's a string, try parsing as JSON
             try:
                 key_dict = json.loads(raw_secret)
-            except json.JSONDecodeError:
-                st.error("Secrets Error: Data is not valid JSON or TOML. Please check formatting.")
+            except:
+                st.error("Secrets Error: Data format invalid.")
                 st.stop()
         else:
-            # Fallback for weird objects
             key_dict = dict(raw_secret)
 
-        # Fix Private Key Newlines
+        # --- THE MAGIC FIX: Repair Private Key ---
+        # Ye line zabardasti '\n' text ko asli New Line mein convert karegi
         if "private_key" in key_dict:
             key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
             
@@ -124,8 +122,7 @@ try:
     else:
         gc = gspread.service_account(filename="service_key.json")
 except Exception as e:
-    st.error(f"Config Error: {e}")
-    st.info("Tip: Delete everything in Secrets and paste the provided TOML block.")
+    st.error(f"Login Error: {e}")
     st.stop()
 
 if 'auth' not in st.session_state:
