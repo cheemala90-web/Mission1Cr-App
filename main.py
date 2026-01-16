@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V36", layout="wide")
 
 st.markdown("""
     <style>
@@ -22,6 +22,7 @@ st.markdown("""
     .stats-val { color: #003366; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
     .stats-sub { font-size: 11px; color: #2ea043 !important; font-weight: 800 !important; margin-top: 4px; display: block; }
     div[data-baseweb="input"] > div { border: 2px solid #333333 !important; }
+    div[role="radiogroup"] { background: #e8f5e9; padding: 10px; border-radius: 8px; border: 1px solid #2ea043; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -73,7 +74,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE
+# 3. DATA ENGINE (V36: AUTO + MANUAL FALLBACK)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -88,33 +89,30 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- FIXED LOGIC: STRICTLY CHECK Q6 ---
-    # Hum 'loop' ya 'scanner' use nahi karenge jo C12 tak pahunch jaye.
-    # Hum seedha Row 6 (Index 5) ke Q aur T columns ko target karenge.
+    # --- DUAL SIGNAL LOGIC ---
+    sig1 = {"code": None, "price": "0.00", "qty": "0", "source": "First Buy (Q2)"}
+    sig2 = {"code": None, "price": "0.00", "qty": "0", "source": "Next Buy (C6)"}
     
-    auto_stock_code = ""
-    auto_qty = "0"
-    
-    # Check if Row 6 exists
+    # 1. CHECK Q2 (Row 2, Index 1)
+    if len(h_data) > 1:
+        r2 = h_data[1]
+        if len(r2) > 16:
+            val = str(r2[16]).strip() # Q2
+            if val and ("NSE:" in val.upper() or "BSE:" in val.upper()):
+                sig1["code"] = val
+                if len(r2) > 18: sig1["price"] = str(r2[18]).strip() # S2
+                if len(r2) > 19: sig1["qty"] = str(r2[19]).strip()   # T2
+
+    # 2. CHECK C6 (Row 6, Index 5)
     if len(h_data) > 5:
-        row_6 = h_data[5] # Index 5 is Row 6
-        
-        # Column Q is Index 16 (A=0, ..., Q=16)
-        # Column T is Index 19
-        
-        if len(row_6) > 16:
-            val_q6 = str(row_6[16]).strip()
-            
-            # Sirf tab uthao agar usme "NSE:" ya "BSE:" likha ho
-            # Aur wo koi purana stock na ho
-            if val_q6 and ("NSE:" in val_q6.upper() or "BSE:" in val_q6.upper()):
-                auto_stock_code = val_q6
-                
-                # Agar Stock mila, tabhi Quantity dhoondo
-                if len(row_6) > 19:
-                    val_t6 = str(row_6[19]).strip()
-                    if val_t6.replace('.','').isdigit():
-                        auto_qty = val_t6
+        r6 = h_data[5]
+        # Column C is Index 2
+        if len(r6) > 2:
+            val = str(r6[2]).strip() # C6
+            if val and ("NSE:" in val.upper() or "BSE:" in val.upper()):
+                sig2["code"] = val
+                if len(r6) > 18: sig2["price"] = str(r6[18]).strip() # S6
+                if len(r6) > 19: sig2["qty"] = str(r6[19]).strip()   # T6
 
     # --- DYNAMIC TOTAL STEPS ---
     total_steps_list = [r[0] for r in st_data[2:] if len(r) > 0 and r[0].strip() != ""]
@@ -126,7 +124,6 @@ try:
     progress_count = len([x for x in k_vals if x.strip() != ""])
     progress_pct = min((progress_count / TOTAL_STEPS) * 100, 100)
     
-    # Sold Count
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
@@ -197,8 +194,7 @@ for col, lbl, val, color_type in metrics:
 # 5. ACTION TERMINAL
 # ==========================================
 st.write("---")
-# Basic check to enable form
-is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]
+
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
 is_sell_active = s_idx is not None
@@ -208,26 +204,66 @@ c_buy, c_sell = st.columns(2)
 with c_buy:
     with st.container(border=True):
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
-        if is_buy_active:
-            with st.form("buy_form"):
-                confirmed_stock_code = st.text_input("Stock Code (Editable)", value=auto_stock_code)
-                try: q_val = int(float(auto_qty.replace(',','')))
-                except: q_val = 0
-                final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
-                b_price = st.number_input("Exec Price", format="%.2f")
-                
-                if st.form_submit_button("✅ EXECUTE BUY"):
+        
+        active_signal = None
+        is_manual = False
+        
+        # --- SELECTOR LOGIC ---
+        # Case 1: Both Q2 and C6 found
+        if sig1["code"] and sig2["code"]:
+            st.info("💡 Auto-Detected multiple signals.")
+            choice = st.radio("Select Source:", [f"First Buy (Q2): {sig1['code']}", f"Next Buy (C6): {sig2['code']}"])
+            if "Q2" in choice: active_signal = sig1
+            else: active_signal = sig2
+            
+        # Case 2: Only Q2 found
+        elif sig1["code"]:
+            active_signal = sig1
+            st.caption(f"✅ Auto-Filled Source: {active_signal['source']}")
+            
+        # Case 3: Only C6 found
+        elif sig2["code"]:
+            active_signal = sig2
+            st.caption(f"✅ Auto-Filled Source: {active_signal['source']}")
+        
+        # Case 4: Nothing Found -> MANUAL MODE
+        else:
+            is_manual = True
+            active_signal = {"code": "", "price": "0.00", "qty": "0", "source": "Manual Entry"}
+            st.warning("⚠️ No Signal Detected. Please check Sheet & Enter Manually.")
+
+        # --- EXECUTE FORM ---
+        with st.form("buy_form"):
+            # Stock Code
+            confirmed_stock_code = st.text_input("Stock Code", value=active_signal["code"])
+            
+            # Qty
+            try: q_val = int(float(active_signal["qty"].replace(',','')))
+            except: q_val = 0
+            final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
+            
+            # Price
+            try: p_val = float(active_signal["price"].replace(',',''))
+            except: p_val = 0.0
+            b_price = st.number_input("Exec Price", value=p_val, format="%.2f")
+            
+            if st.form_submit_button("✅ EXECUTE BUY"):
+                # Safety Check for Manual Mode
+                if not confirmed_stock_code.strip():
+                    st.error("❌ Stock Code cannot be empty!")
+                else:
                     with st.spinner("Saving..."):
+                        # Get Template Row (We still write to the standard location)
                         raw_vals = h_ws.get('O6:T6')[0]
                         raw_vals[2] = confirmed_stock_code
                         raw_vals[4] = b_price
                         raw_vals[5] = final_qty
+                        
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
                         st_ws.update_cell(ow_row, 10, confirmed_stock_code)
                         st_ws.update_cell(ow_row, 11, b_price)
                         st_ws.update_cell(ow_row, 23, str(date.today()))
                         st.balloons(); st.success(f"Buy Saved for {confirmed_stock_code}!"); time.sleep(1); st.rerun()
-        else: st.info("Nothing to buy today. Come back tomorrow!")
 
 with c_sell:
     with st.container(border=True):
