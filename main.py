@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V36", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V37", layout="wide")
 
 st.markdown("""
     <style>
@@ -74,7 +74,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V36: AUTO + MANUAL FALLBACK)
+# 3. DATA ENGINE (V37: FORMAT GUIDANCE)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -206,54 +206,53 @@ with c_buy:
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
         
         active_signal = None
-        is_manual = False
         
         # --- SELECTOR LOGIC ---
-        # Case 1: Both Q2 and C6 found
+        # Case 1: Multiple Signals
         if sig1["code"] and sig2["code"]:
             st.info("💡 Auto-Detected multiple signals.")
             choice = st.radio("Select Source:", [f"First Buy (Q2): {sig1['code']}", f"Next Buy (C6): {sig2['code']}"])
             if "Q2" in choice: active_signal = sig1
             else: active_signal = sig2
             
-        # Case 2: Only Q2 found
+        # Case 2: Only Q2
         elif sig1["code"]:
             active_signal = sig1
             st.caption(f"✅ Auto-Filled Source: {active_signal['source']}")
             
-        # Case 3: Only C6 found
+        # Case 3: Only C6
         elif sig2["code"]:
             active_signal = sig2
             st.caption(f"✅ Auto-Filled Source: {active_signal['source']}")
         
-        # Case 4: Nothing Found -> MANUAL MODE
+        # Case 4: Manual Mode
         else:
-            is_manual = True
             active_signal = {"code": "", "price": "0.00", "qty": "0", "source": "Manual Entry"}
-            st.warning("⚠️ No Signal Detected. Please check Sheet & Enter Manually.")
+            st.warning("⚠️ No Signal Detected. Check Sheet or Enter Manually.")
 
         # --- EXECUTE FORM ---
         with st.form("buy_form"):
-            # Stock Code
-            confirmed_stock_code = st.text_input("Stock Code", value=active_signal["code"])
+            # Stock Code with Placeholder for Guidance
+            confirmed_stock_code = st.text_input("Stock Code", value=active_signal["code"], placeholder="Ex: NSE:INDIGO")
             
-            # Qty
+            # Helper text
+            if active_signal["code"] == "":
+                st.caption("Format Example: NSE:TATASTEEL or BSE:RELIANCE")
+
             try: q_val = int(float(active_signal["qty"].replace(',','')))
             except: q_val = 0
             final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
             
-            # Price
             try: p_val = float(active_signal["price"].replace(',',''))
             except: p_val = 0.0
             b_price = st.number_input("Exec Price", value=p_val, format="%.2f")
             
             if st.form_submit_button("✅ EXECUTE BUY"):
-                # Safety Check for Manual Mode
                 if not confirmed_stock_code.strip():
                     st.error("❌ Stock Code cannot be empty!")
                 else:
                     with st.spinner("Saving..."):
-                        # Get Template Row (We still write to the standard location)
+                        # Get Template Row (Standard Write Location)
                         raw_vals = h_ws.get('O6:T6')[0]
                         raw_vals[2] = confirmed_stock_code
                         raw_vals[4] = b_price
