@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V17", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V19", layout="wide")
 
 st.markdown("""
     <style>
@@ -39,7 +39,6 @@ try:
             except: st.error("❌ Secrets Error: Invalid Format."); st.stop()
         else: key_dict = dict(raw_secret)
 
-        # Fix Private Key
         if "private_key" in key_dict:
             key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
             
@@ -89,32 +88,35 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- TARGETED SCANNER V17 ---
+    # --- SNIPER LOGIC V19 (STRICTLY Q6 & T6) ---
     auto_stock_code = ""
     auto_qty = "0"
-    is_bid = False
     
-    # Check Row 6 specifically (Index 5)
+    # Hum seedha Row 6 (Index 5) uthayenge
     if len(h_data) > 5:
         row6 = h_data[5]
         
-        # 1. Check NEW BUY Column (Column E / Index 4)
-        if len(row6) > 4 and "NSE:" in str(row6[4]).upper():
-            auto_stock_code = row6[4].strip()
-            # Quantity is usually at Index 5 or 19 (T6)
-            if len(row6) > 19 and row6[19].strip().isdigit(): auto_qty = row6[19].strip() # Prefer T6
-            elif len(row6) > 5 and row6[5].strip().isdigit(): auto_qty = row6[5].strip()  # Fallback
-            is_bid = False
+        # TARGET 1: Column Q (Index 16) - Most Common
+        # TARGET 2: Column T (Index 19) - Quantity
+        
+        # Checking Q6 specifically
+        if len(row6) > 16:
+            q6_val = str(row6[16]).strip()
             
-        # 2. If New Buy is Empty, Check BID Column (Scan rest of row)
-        elif not auto_stock_code:
-            for i in range(7, len(row6)): # Start scanning from col H onwards
-                if "NSE:" in str(row6[i]).upper():
-                    auto_stock_code = row6[i].strip()
-                    auto_qty = "2" # BIDs usually have fixed small qty or fetch from sheet
-                    is_bid = True
-                    break
-    
+            if "NSE:" in q6_val.upper():
+                auto_stock_code = q6_val
+                # Get Quantity from T6 (Index 19)
+                if len(row6) > 19:
+                    auto_qty = str(row6[19]).strip()
+            else:
+                # Agar Q6 khali hai, toh Column E (Index 4) check kar lete hain (Backup)
+                # Lekin aage nahi badhenge
+                if len(row6) > 4:
+                    e6_val = str(row6[4]).strip()
+                    if "NSE:" in e6_val.upper():
+                        auto_stock_code = e6_val
+                        if len(row6) > 5: auto_qty = str(row6[5]).strip()
+
     # Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
     progress_count = len([x for x in k_vals if x.strip() != ""])
@@ -186,7 +188,8 @@ for col, lbl, val, color_type in metrics:
 # 5. ACTION TERMINAL
 # ==========================================
 st.write("---")
-is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]
+# STRICT CHECK: Must be non-empty and not just 0 or #N/A
+is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A", "0.00"] and "NSE:" in auto_stock_code
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
 is_sell_active = s_idx is not None
@@ -198,10 +201,7 @@ with c_buy:
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
         if is_buy_active:
             with st.form("buy_form"):
-                # Label change if it's a BID
-                type_lbl = "(FRESH BUY)" if not is_bid else "(BID / DIP BUY)"
-                st.markdown(f"**Stock:** {auto_stock_code} **{type_lbl}**")
-                
+                st.markdown(f"**Stock:** {auto_stock_code}")
                 try: q_val = int(float(auto_qty.replace(',','')))
                 except: q_val = 0
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
@@ -209,8 +209,6 @@ with c_buy:
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
                         raw_vals = h_ws.get('O6:T6')[0]
-                        # Update columns O, P, R, S, T (indexes 14-19)
-                        # We specifically write to O, Q, R (indexes 0, 2, 3 in the range O-T)
                         raw_vals[2], raw_vals[4], raw_vals[5] = auto_stock_code, b_price, final_qty
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
                         st_ws.update_cell(ow_row, 10, auto_stock_code); st_ws.update_cell(ow_row, 11, b_price); st_ws.update_cell(ow_row, 23, str(date.today()))
