@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V22", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V23", layout="wide")
 
 st.markdown("""
     <style>
@@ -73,7 +73,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (AREA SEARCH)
+# 3. DATA ENGINE (COLUMN HUNTER)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -87,30 +87,41 @@ try:
     mp_data = mp_ws.get_all_values()
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- V22: AREA SEARCH (P5 to T8) ---
+    # --- V23: COLUMN HUNTER STRATEGY ---
     auto_stock_code = ""
     auto_qty = "0"
+    found_at_row = "None"
     
-    # We fetch a block of cells around the target area
-    # Rows 5, 6, 7, 8 (Indices 4, 5, 6, 7)
-    # Cols P, Q, R, S, T
     try:
-        search_grid = h_ws.get('P5:T8') # Returns list of lists
+        # Fetch ENTIRE Column Q (Index 17) and T (Index 20)
+        # Using col_values is safer as it gets everything
+        col_q = h_ws.col_values(17) # Column Q
         
-        # Scan the grid
-        for row in search_grid:
-            for cell_val in row:
-                if "NSE:" in str(cell_val).upper():
-                    auto_stock_code = str(cell_val).strip()
-                    # Try to find quantity in the same row (Look for digits)
-                    for q_candidate in row:
-                        if str(q_candidate).strip().isdigit():
-                            auto_qty = str(q_candidate).strip()
-                    break # Break inner loop
-            if auto_stock_code: break # Break outer loop
-            
+        # Start searching from Row 5 (Index 4) downwards
+        # We limit search to first 20 rows to keep it fast
+        search_limit = min(len(col_q), 20)
+        
+        for i in range(4, search_limit):
+            val = str(col_q[i]).strip()
+            # Strict Check: Must contain "NSE:"
+            if "NSE:" in val.upper():
+                auto_stock_code = val
+                found_at_row = i + 1 # Row number (1-based)
+                
+                # Now fetch Quantity from same row, Column T (Index 20)
+                # We fetch specifically that cell to be accurate
+                try:
+                    # Column T is the 20th column
+                    qty_cell = h_ws.cell(found_at_row, 20).value
+                    if qty_cell and str(qty_cell).strip().isdigit():
+                        auto_qty = str(qty_cell).strip()
+                except:
+                    auto_qty = "0"
+                
+                break # Stop at first match
+                
     except Exception as e:
-        st.error(f"Grid Scan Error: {e}")
+        st.error(f"Hunter Error: {e}")
 
     # Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
@@ -202,8 +213,8 @@ with c_buy:
                 b_price = st.number_input("Exec Price", format="%.2f")
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        raw_vals = h_ws.get('O6:T6')[0]
-                        # Ensure we write NSE: prefix if missing
+                        raw_vals = h_ws.get('O6:T6')[0] # Template
+                        # Check Prefix
                         write_stock = auto_stock_code
                         if "NSE:" not in write_stock.upper() and "BSE:" not in write_stock.upper():
                             write_stock = "NSE:" + write_stock
@@ -216,14 +227,19 @@ with c_buy:
                         st_ws.update_cell(ow_row, 10, write_stock); st_ws.update_cell(ow_row, 11, b_price); st_ws.update_cell(ow_row, 23, str(date.today()))
                         st.balloons(); st.success("Buy Saved!"); time.sleep(1); st.rerun()
         else: 
-            st.info("Nothing to buy today.")
-            # DIAGNOSTIC TOOL V2 (Visual Grid)
-            with st.expander("🔍 System Diagnostic"):
-                st.write("Scanning Area (P5 to T8):")
-                try:
-                    debug_grid = h_ws.get('P5:T8')
-                    st.table(debug_grid)
-                except: st.write("Error reading grid")
+            st.info("No Active Signal Found.")
+            # DIAGNOSTIC
+            with st.expander("🔍 Deep Scan Report"):
+                st.write(f"Scanned Column Q (Rows 5-20).")
+                if found_at_row != "None":
+                    st.write(f"Found 'NSE:' at Row: **{found_at_row}**")
+                    st.write(f"Value: **{auto_stock_code}**")
+                else:
+                    st.write("Result: No 'NSE:' tag found in the list.")
+                    st.write("Tip: Agar Sheet mein dikh raha hai, toh 1 min ruk kar refresh karein.")
+            
+            if st.button("🔄 Force Refresh Data"):
+                st.rerun()
 
 with c_sell:
     with st.container(border=True):
