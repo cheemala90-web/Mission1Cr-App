@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V24", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V26", layout="wide")
 
 st.markdown("""
     <style>
@@ -73,7 +73,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V24: GRAB ANYTHING)
+# 3. DATA ENGINE (STRICT Q6 ONLY)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -87,38 +87,40 @@ try:
     mp_data = mp_ws.get_all_values()
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- V24: INTELLIGENT SCANNER ---
+    # --- V26: STRICT Q6 ONLY ---
     auto_stock_code = ""
     auto_qty = "0"
-    debug_log = [] # To show user what we see
+    
+    # IGNORE LIST (Just in case Q6 has a header)
+    IGNORE_LIST = ["NEXT BID LEVEL", "STOCK", "QTY", "PRICE", "TARGET", "SL", "LTP", "BUY", "SELL", "DATE"]
     
     try:
-        # Fetch Cells Q5 to Q15 (Where stock usually appears)
-        # Column Q is Index 17 (in 1-based) or 16 (in 0-based)
-        # Let's pull a specific range to be safe
-        raw_scan = h_ws.get('Q5:Q15') # List of lists [['NSE:INDIGO'], [''], ['']]
+        # Fetch ONLY Row 6, Columns Q to T (Indices 17 to 20 in A1 notation)
+        # Q is 17th letter, T is 20th letter.
+        # In batch get, Q6 is the first cell.
+        raw_row = h_ws.get('Q6:T6') # Returns [['NSE:INDIGO', ..., ..., '10']]
         
-        row_offset = 5 # Starting row
-        for i, row in enumerate(raw_scan):
-            if len(row) > 0:
-                val = str(row[0]).strip()
-                debug_log.append(f"Row {row_offset+i}: '{val}'")
+        if raw_row and len(raw_row) > 0 and len(raw_row[0]) > 0:
+            val = str(raw_row[0][0]).strip() # This is Q6
+            val_upper = val.upper()
+
+            # Validation Logic
+            is_valid = True
+            if val_upper in ["", "0", "#N/A", "FALSE", "TRUE"]: is_valid = False
+            if any(x in val_upper for x in IGNORE_LIST): is_valid = False # Block Headers
+            if not any(c.isalpha() for c in val): is_valid = False # Must have letters
+            
+            if is_valid:
+                auto_stock_code = val
                 
-                # LOGIC: Must not be empty, and not a pure number
-                # Also ignore common headers if any
-                if val and val not in ["", "#N/A", "0", "FALSE"]:
-                    # Is it a stock? (Usually contains letters)
-                    if any(c.isalpha() for c in val):
-                        auto_stock_code = val
-                        
-                        # Now find quantity in Column T of the SAME ROW
-                        try:
-                            t_val = h_ws.cell(row_offset+i, 20).value # Col T is 20
-                            if t_val and str(t_val).strip().replace('.','').isdigit():
-                                auto_qty = str(t_val).strip()
-                        except: auto_qty = "0"
-                        
-                        break # Found it!
+                # Fetch Quantity from T6 (Index 3 in the range Q,R,S,T)
+                if len(raw_row[0]) > 3:
+                    t_val = str(raw_row[0][3]).strip()
+                    if t_val.replace('.','').isdigit():
+                        auto_qty = t_val
+                else:
+                    auto_qty = "0"
+                    
     except Exception as e:
         st.error(f"Scanner Error: {e}")
 
@@ -227,17 +229,7 @@ with c_buy:
                         st.balloons(); st.success("Buy Saved!"); time.sleep(1); st.rerun()
         else: 
             st.info("Nothing to buy today.")
-            # DIAGNOSTIC TOOL V3 (X-Ray)
-            with st.expander("🔍 X-RAY REPORT (Raw Data from Google)"):
-                st.write("Code searched Column Q (Rows 5-15). Here is what it saw:")
-                if debug_log:
-                    for line in debug_log:
-                        st.text(line)
-                else:
-                    st.write("Google returned EMPTY list. Trying waiting 30 seconds.")
-                st.write("---")
-                st.write("**Interpretation:** If you see 'Row X: ' (empty quote), it means Google API thinks the cell is empty. Type in the cell again and press Enter.")
-
+            
 with c_sell:
     with st.container(border=True):
         st.markdown(f"<h3 style='color:#d93025; margin-top:0; text-align:center;'>🔻 SELL TASK</h3>", unsafe_allow_html=True)
