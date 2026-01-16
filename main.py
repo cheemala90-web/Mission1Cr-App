@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V30", layout="wide")
 
 st.markdown("""
     <style>
@@ -26,33 +26,27 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION (KEY DOCTOR MODE)
+# 2. AUTHENTICATION
 # ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
 
 try:
     if "SERVICE_ACCOUNT_JSON" in st.secrets:
         raw_secret = st.secrets["SERVICE_ACCOUNT_JSON"]
-        
-        # Format Handling
         if isinstance(raw_secret, dict): key_dict = dict(raw_secret)
         elif isinstance(raw_secret, str): 
             try: key_dict = json.loads(raw_secret)
             except: st.error("❌ Secrets Error: Invalid Format."); st.stop()
         else: key_dict = dict(raw_secret)
 
-        # --- KEY DOCTOR: Repair & Validate ---
         if "private_key" in key_dict:
-            pk = key_dict["private_key"]
-            pk = pk.replace("\\n", "\n").strip('"').strip("'")
-            key_dict["private_key"] = pk
+            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n").strip('"').strip("'")
             
         gc = gspread.service_account_from_dict(key_dict)
     else:
         gc = gspread.service_account(filename="service_key.json")
 except Exception as e:
-    st.error(f"Login Failed: {e}")
-    st.stop()
+    st.error(f"Login Failed: {e}"); st.stop()
 
 if 'auth' not in st.session_state:
     st.session_state.update({'auth': False, 'sid': None, 'name': None})
@@ -79,7 +73,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (STRICT LOGIC V29)
+# 3. DATA ENGINE (V30: DUAL SLOT LOGIC)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -94,25 +88,56 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- STRICT Q6 LOGIC (NO SCANNER) ---
-    # Ye sirf Row 6 (Index 5) check karega. C12 (Row 12) ko ignore karega.
+    # --- DUAL SLOT LOGIC (Q2 First, Then Q6) ---
     auto_stock_code = ""
     auto_qty = "0"
+    auto_price = "0.00"
     
-    if len(h_data) > 5:
-        row_6 = h_data[5] # Row 6 is index 5
-        
-        # Column Q is Index 16 (0-based count: A=0... Q=16)
-        # Column T is Index 19
-        
+    # Indices (0-based):
+    # Q=16, S=18, T=19
+    
+    found_signal = False
+    
+    # --- PRIORITY 1: CHECK Q2 (Row 2 -> Index 1) ---
+    if len(h_data) > 1:
+        row_2 = h_data[1]
+        if len(row_2) > 16:
+            val_q2 = str(row_2[16]).strip()
+            # Valid Check
+            if val_q2 and ("NSE:" in val_q2.upper() or "BSE:" in val_q2.upper()):
+                auto_stock_code = val_q2
+                
+                # Get Price from S2 (Index 18)
+                if len(row_2) > 18:
+                    val_s2 = str(row_2[18]).strip()
+                    if val_s2.replace('.','').replace(',','').isdigit():
+                        auto_price = val_s2
+                        
+                # Get Qty from T2 (Index 19)
+                if len(row_2) > 19:
+                    val_t2 = str(row_2[19]).strip()
+                    if val_t2.replace('.','').isdigit():
+                        auto_qty = val_t2
+                
+                found_signal = True # Stop here, don't check Q6
+    
+    # --- PRIORITY 2: CHECK Q6 (Row 6 -> Index 5) ---
+    # Sirf tab check karo agar Q2 mein kuch nahi mila
+    if not found_signal and len(h_data) > 5:
+        row_6 = h_data[5]
         if len(row_6) > 16:
             val_q6 = str(row_6[16]).strip()
             
-            # Validation: Must contain NSE/BSE and not be empty
             if val_q6 and ("NSE:" in val_q6.upper() or "BSE:" in val_q6.upper()):
                 auto_stock_code = val_q6
                 
-                # Get Quantity from T6
+                # Get Price from S6 (Index 18)
+                if len(row_6) > 18:
+                    val_s6 = str(row_6[18]).strip()
+                    if val_s6.replace('.','').replace(',','').isdigit():
+                        auto_price = val_s6
+                
+                # Get Qty from T6 (Index 19)
                 if len(row_6) > 19:
                     val_t6 = str(row_6[19]).strip()
                     if val_t6.replace('.','').isdigit():
@@ -128,7 +153,6 @@ try:
     progress_count = len([x for x in k_vals if x.strip() != ""])
     progress_pct = min((progress_count / TOTAL_STEPS) * 100, 100)
     
-    # Sold Count
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
@@ -199,7 +223,6 @@ for col, lbl, val, color_type in metrics:
 # 5. ACTION TERMINAL
 # ==========================================
 st.write("---")
-# Basic check to enable form (Strictly checks Q6 variable)
 is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
@@ -212,28 +235,30 @@ with c_buy:
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
         if is_buy_active:
             with st.form("buy_form"):
-                # Editable Stock Name
+                # Editable Code
                 confirmed_stock_code = st.text_input("Stock Code (Editable)", value=auto_stock_code)
                 
+                # Quantity (Auto-fetched)
                 try: q_val = int(float(auto_qty.replace(',','')))
                 except: q_val = 0
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
-                b_price = st.number_input("Exec Price", format="%.2f")
+                
+                # Price (Auto-fetched from S2/S6)
+                try: p_val = float(auto_price.replace(',',''))
+                except: p_val = 0.0
+                b_price = st.number_input("Exec Price", value=p_val, format="%.2f")
                 
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
                         # Get Template Row
                         raw_vals = h_ws.get('O6:T6')[0]
                         
-                        # Use CONFIRMED values from input
+                        # Use User Confirmed Values
                         raw_vals[2] = confirmed_stock_code
                         raw_vals[4] = b_price
                         raw_vals[5] = final_qty
                         
-                        # Update Holding Sheet
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
-                        
-                        # Update Tracking Sheet
                         st_ws.update_cell(ow_row, 10, confirmed_stock_code)
                         st_ws.update_cell(ow_row, 11, b_price)
                         st_ws.update_cell(ow_row, 23, str(date.today()))
