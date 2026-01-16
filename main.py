@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V28", layout="wide")
 
 st.markdown("""
     <style>
@@ -26,7 +26,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION (KEY DOCTOR MODE)
+# 2. AUTHENTICATION
 # ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
 
@@ -88,7 +88,7 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # X-Ray Scanner (For Default Values)
+    # X-Ray Scanner
     auto_stock_code = ""; auto_qty = "0"
     for row_idx, row in enumerate(h_data):
         if row_idx > 15: break 
@@ -101,15 +101,28 @@ try:
                 break
         if auto_stock_code: break
     
-    # Progress Logic
+    # --- DYNAMIC TOTAL STEPS CALCULATION ---
+    # Hum 'TRADING STEPS 3%' sheet ke Column A (Steps) ko count karenge
+    # Row 1 aur 2 headers hain, unhe hata denge.
+    total_steps_list = [r[0] for r in st_data[2:] if len(r) > 0 and r[0].strip() != ""]
+    TOTAL_STEPS = len(total_steps_list)
+    
+    # Agar galti se 0 aaye (Sheet empty ho), toh default 457 rakh lo
+    if TOTAL_STEPS < 10: TOTAL_STEPS = 457 
+
+    # Progress Calculation
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
     progress_count = len([x for x in k_vals if x.strip() != ""])
-    progress_pct = min((progress_count / 457) * 100, 100)
+    
+    # Percentage Logic
+    progress_pct = min((progress_count / TOTAL_STEPS) * 100, 100)
+    
+    # Sold Count
     c_vals_sold = [r[2] if len(r) > 2 else "" for r in s_data[4:]]
     sold_steps_count = len([x for x in c_vals_sold if x.strip() != ""])
 
     # AI Logic
-    TARGET_STEPS = 457; remaining_steps = TARGET_STEPS - sold_steps_count
+    remaining_steps = TOTAL_STEPS - sold_steps_count
     start_date = date.today(); raw_dates = []
     if len(s_data) > 4:
         for row in s_data[4:]:
@@ -145,6 +158,7 @@ except Exception as e:
 # ==========================================
 st.markdown(f'<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.name.upper()}</h1></div>', unsafe_allow_html=True)
 
+# --- UPDATED PROGRESS BAR WITH TOTAL STEPS ---
 st.markdown(f"""
     <div class="prog-container">
         <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555; margin-bottom:10px;">
@@ -153,15 +167,18 @@ st.markdown(f"""
         <div style="background:#eee; height:24px; border-radius:12px; position:relative;">
             <div style="background:#2ea043; width:{progress_pct}%; height:100%; border-radius:12px;"></div>
             <div style="position:absolute; top:-38px; left:{progress_pct}%; transform:translateX(-50%); background:#003366; color:white; padding:5px 10px; border-radius:6px; font-weight:bold; font-size:12px; white-space:nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
-                Done: {progress_count} | ₹ {equity_bal}
+                Done: {progress_count} / {TOTAL_STEPS} | ₹ {equity_bal}
             </div>
+        </div>
+        <div style="text-align:center; margin-top:5px; font-size:12px; color:#666;">
+            Total Roadmap Length: <b>{TOTAL_STEPS} Steps</b>
         </div>
     </div>
 """, unsafe_allow_html=True)
 
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 p_row = mp_data[1] if len(mp_data) > 1 else []
-metrics = [(c1, "Steps Completed", sold_steps_count, "green"), (c2, "AI Time Left", time_display, "blue"), (c3, "Monthly P%", p_row[3] if len(p_row)>3 else "0%", "blue"), (c4, "Remaining Steps", remaining_steps, "red"), (c5, "Pocket %", p_row[5] if len(p_row)>5 else "0%", "blue"), (c6, "Annualized", p_row[6] if len(p_row)>6 else "0%", "blue")]
+metrics = [(c1, "Steps Completed", f"{sold_steps_count} / {TOTAL_STEPS}", "green"), (c2, "AI Time Left", time_display, "blue"), (c3, "Monthly P%", p_row[3] if len(p_row)>3 else "0%", "blue"), (c4, "Remaining Steps", remaining_steps, "red"), (c5, "Pocket %", p_row[5] if len(p_row)>5 else "0%", "blue"), (c6, "Annualized", p_row[6] if len(p_row)>6 else "0%", "blue")]
 
 for col, lbl, val, color_type in metrics:
     color = "#2ea043" if color_type == "green" else ("#d93025" if color_type == "red" else "#003366")
@@ -172,7 +189,6 @@ for col, lbl, val, color_type in metrics:
 # 5. ACTION TERMINAL
 # ==========================================
 st.write("---")
-# Basic check to enable form
 is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
@@ -185,9 +201,7 @@ with c_buy:
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
         if is_buy_active:
             with st.form("buy_form"):
-                # --- CHANGE IS HERE: Stock Code is now a Text Input (Editable) ---
                 confirmed_stock_code = st.text_input("Stock Code (Editable)", value=auto_stock_code)
-                
                 try: q_val = int(float(auto_qty.replace(',','')))
                 except: q_val = 0
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
@@ -195,22 +209,14 @@ with c_buy:
                 
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        # Get Template Row
                         raw_vals = h_ws.get('O6:T6')[0]
-                        
-                        # --- CRITICAL FIX: Use the 'confirmed_stock_code' from the input, NOT auto_stock_code ---
-                        raw_vals[2] = confirmed_stock_code  # Uses user-edited/confirmed value
+                        raw_vals[2] = confirmed_stock_code
                         raw_vals[4] = b_price
                         raw_vals[5] = final_qty
-                        
-                        # Update Holding Sheet
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
-                        
-                        # Update Tracking Sheet
                         st_ws.update_cell(ow_row, 10, confirmed_stock_code)
                         st_ws.update_cell(ow_row, 11, b_price)
                         st_ws.update_cell(ow_row, 23, str(date.today()))
-                        
                         st.balloons(); st.success(f"Buy Saved for {confirmed_stock_code}!"); time.sleep(1); st.rerun()
         else: st.info("Nothing to buy today. Come back tomorrow!")
 
