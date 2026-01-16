@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V17", layout="wide")
 
 st.markdown("""
     <style>
@@ -26,43 +26,28 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION (KEY DOCTOR MODE)
+# 2. AUTHENTICATION (FAIL-SAFE)
 # ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
 
 try:
     if "SERVICE_ACCOUNT_JSON" in st.secrets:
         raw_secret = st.secrets["SERVICE_ACCOUNT_JSON"]
-        
-        # Format Handling
         if isinstance(raw_secret, dict): key_dict = dict(raw_secret)
         elif isinstance(raw_secret, str): 
             try: key_dict = json.loads(raw_secret)
             except: st.error("❌ Secrets Error: Invalid Format."); st.stop()
         else: key_dict = dict(raw_secret)
 
-        # --- KEY DOCTOR: Repair & Validate ---
+        # Fix Private Key
         if "private_key" in key_dict:
-            pk = key_dict["private_key"]
-            # 1. Fix newlines
-            pk = pk.replace("\\n", "\n")
-            # 2. Remove any extra quotes at start/end if copied wrongly
-            pk = pk.strip('"').strip("'")
-            # 3. Save back
-            key_dict["private_key"] = pk
-            
-            # Diagnostic (Only shows if error happens)
-            if "-----BEGIN PRIVATE KEY-----" not in pk:
-                st.error("❌ Critical Error: Private Key sahi se copy nahi hui hai. 'BEGIN PRIVATE KEY' gayab hai.")
-                st.stop()
+            key_dict["private_key"] = key_dict["private_key"].replace("\\n", "\n")
             
         gc = gspread.service_account_from_dict(key_dict)
     else:
         gc = gspread.service_account(filename="service_key.json")
 except Exception as e:
-    st.error(f"Login Failed: {e}")
-    st.warning("Tip: Purani key delete karke nayi key banayein aur Secrets update karein.")
-    st.stop()
+    st.error(f"Login Failed: {e}"); st.stop()
 
 if 'auth' not in st.session_state:
     st.session_state.update({'auth': False, 'sid': None, 'name': None})
@@ -104,18 +89,31 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # X-Ray Scanner
-    auto_stock_code = ""; auto_qty = "0"
-    for row_idx, row in enumerate(h_data):
-        if row_idx > 15: break 
-        for col_idx, cell_val in enumerate(row):
-            if "NSE:" in str(cell_val).upper():
-                auto_stock_code = cell_val.strip()
-                if len(row) > 18 and row[18].strip().isdigit(): auto_qty = row[18].strip()
-                elif len(row) > 19 and row[19].strip().isdigit(): auto_qty = row[19].strip()
-                elif len(row) > col_idx + 3: auto_qty = row[col_idx + 3]
-                break
-        if auto_stock_code: break
+    # --- TARGETED SCANNER V17 ---
+    auto_stock_code = ""
+    auto_qty = "0"
+    is_bid = False
+    
+    # Check Row 6 specifically (Index 5)
+    if len(h_data) > 5:
+        row6 = h_data[5]
+        
+        # 1. Check NEW BUY Column (Column E / Index 4)
+        if len(row6) > 4 and "NSE:" in str(row6[4]).upper():
+            auto_stock_code = row6[4].strip()
+            # Quantity is usually at Index 5 or 19 (T6)
+            if len(row6) > 19 and row6[19].strip().isdigit(): auto_qty = row6[19].strip() # Prefer T6
+            elif len(row6) > 5 and row6[5].strip().isdigit(): auto_qty = row6[5].strip()  # Fallback
+            is_bid = False
+            
+        # 2. If New Buy is Empty, Check BID Column (Scan rest of row)
+        elif not auto_stock_code:
+            for i in range(7, len(row6)): # Start scanning from col H onwards
+                if "NSE:" in str(row6[i]).upper():
+                    auto_stock_code = row6[i].strip()
+                    auto_qty = "2" # BIDs usually have fixed small qty or fetch from sheet
+                    is_bid = True
+                    break
     
     # Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
@@ -200,7 +198,10 @@ with c_buy:
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
         if is_buy_active:
             with st.form("buy_form"):
-                st.markdown(f"**Stock:** {auto_stock_code}")
+                # Label change if it's a BID
+                type_lbl = "(FRESH BUY)" if not is_bid else "(BID / DIP BUY)"
+                st.markdown(f"**Stock:** {auto_stock_code} **{type_lbl}**")
+                
                 try: q_val = int(float(auto_qty.replace(',','')))
                 except: q_val = 0
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
@@ -208,11 +209,13 @@ with c_buy:
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
                         raw_vals = h_ws.get('O6:T6')[0]
+                        # Update columns O, P, R, S, T (indexes 14-19)
+                        # We specifically write to O, Q, R (indexes 0, 2, 3 in the range O-T)
                         raw_vals[2], raw_vals[4], raw_vals[5] = auto_stock_code, b_price, final_qty
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
                         st_ws.update_cell(ow_row, 10, auto_stock_code); st_ws.update_cell(ow_row, 11, b_price); st_ws.update_cell(ow_row, 23, str(date.today()))
                         st.balloons(); st.success("Buy Saved!"); time.sleep(1); st.rerun()
-        else: st.info("Nothing to buy today. Come back tomorrow!")
+        else: st.info("Nothing to buy today.")
 
 with c_sell:
     with st.container(border=True):
