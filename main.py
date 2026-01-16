@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V32", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V34", layout="wide")
 
 st.markdown("""
     <style>
@@ -22,6 +22,7 @@ st.markdown("""
     .stats-val { color: #003366; font-size: 18px; font-weight: 900; margin-top: 5px; display: block; }
     .stats-sub { font-size: 11px; color: #2ea043 !important; font-weight: 800 !important; margin-top: 4px; display: block; }
     div[data-baseweb="input"] > div { border: 2px solid #333333 !important; }
+    div[role="radiogroup"] { background: #e8f5e9; padding: 10px; border-radius: 8px; border: 1px solid #2ea043; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -73,7 +74,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V32: Q2 + Q5-Q11)
+# 3. DATA ENGINE (DUAL DETECTOR)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -88,60 +89,39 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- SCANNING LOGIC START ---
-    auto_stock_code = ""
-    auto_qty = "0"
-    auto_price = "0.00"
-    debug_info = [] 
-    found_signal = False
+    # --- LOGIC: FIND BOTH SIGNALS ---
     
-    # --- PRIORITY 1: CHECK Q2 (Row 2 / Index 1) ---
+    # Holder for Signal 1 (Q2)
+    sig1 = {"code": None, "price": "0.00", "qty": "0", "source": "Q2 (First Buy)"}
+    
+    # Holder for Signal 2 (Q5-Q20)
+    sig2 = {"code": None, "price": "0.00", "qty": "0", "source": "Scanner (Next Buy)"}
+    
+    # 1. CHECK Q2
     if len(h_data) > 1:
-        row_2 = h_data[1]
-        if len(row_2) > 16:
-            val_q2 = str(row_2[16]).strip()
-            debug_info.append(f"Q2: {val_q2}")
-            if val_q2 and ("NSE:" in val_q2.upper() or "BSE:" in val_q2.upper()):
-                auto_stock_code = val_q2
-                
-                # S2 (Price)
-                if len(row_2) > 18:
-                    val_s2 = str(row_2[18]).strip()
-                    if val_s2.replace('.','').replace(',','').isdigit(): auto_price = val_s2
-                # T2 (Qty)
-                if len(row_2) > 19:
-                    val_t2 = str(row_2[19]).strip()
-                    if val_t2.replace('.','').isdigit(): auto_qty = val_t2
-                
-                found_signal = True 
+        r2 = h_data[1]
+        if len(r2) > 16:
+            val = str(r2[16]).strip()
+            if val and ("NSE:" in val.upper() or "BSE:" in val.upper()):
+                sig1["code"] = val
+                if len(r2) > 18: sig1["price"] = str(r2[18]).strip()
+                if len(r2) > 19: sig1["qty"] = str(r2[19]).strip()
 
-    # --- PRIORITY 2: CHECK RANGE Q5 to Q11 (Rows 5 to 11) ---
-    # Hum Row 12 ko touch nahi karenge. 
-    # Indices: Row 5 is index 4. Row 11 is index 10.
-    if not found_signal and len(h_data) > 4:
-        search_rows = h_data[4:11] # Slices index 4 up to (but not including) 11. Wait, need up to 11.
-        # Python slice [4:11] gives indices 4,5,6,7,8,9,10. Correct.
-        
-        for i, row in enumerate(search_rows):
-            actual_row_num = i + 5
+    # 2. CHECK Q5-Q20 (Scanner)
+    if len(h_data) > 4:
+        # Scan Row 5 to 20
+        scan_rows = h_data[4:21]
+        for i, row in enumerate(scan_rows):
+            actual_row = i + 5
             if len(row) > 16:
-                val_q = str(row[16]).strip()
-                debug_info.append(f"Q{actual_row_num}: {val_q}")
-                
-                if val_q and ("NSE:" in val_q.upper() or "BSE:" in val_q.upper()):
-                    auto_stock_code = val_q
-                    
-                    # S (Price)
-                    if len(row) > 18:
-                        val_s = str(row[18]).strip()
-                        if val_s.replace('.','').replace(',','').isdigit(): auto_price = val_s
-                    # T (Qty)
-                    if len(row) > 19:
-                        val_t = str(row[19]).strip()
-                        if val_t.replace('.','').isdigit(): auto_qty = val_t
-                    
-                    found_signal = True
-                    break 
+                val = str(row[16]).strip()
+                # Strict check to ensure we don't pick garbage
+                if val and ("NSE:" in val.upper() or "BSE:" in val.upper()):
+                    sig2["code"] = val
+                    sig2["source"] = f"Found at Q{actual_row}" # Tell user where we found it
+                    if len(row) > 18: sig2["price"] = str(row[18]).strip()
+                    if len(row) > 19: sig2["qty"] = str(row[19]).strip()
+                    break # Stop at first find
 
     # --- DYNAMIC TOTAL STEPS ---
     total_steps_list = [r[0] for r in st_data[2:] if len(r) > 0 and r[0].strip() != ""]
@@ -223,7 +203,7 @@ for col, lbl, val, color_type in metrics:
 # 5. ACTION TERMINAL
 # ==========================================
 st.write("---")
-is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A"]
+
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
 is_sell_active = s_idx is not None
@@ -233,21 +213,45 @@ c_buy, c_sell = st.columns(2)
 with c_buy:
     with st.container(border=True):
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
-        if is_buy_active:
+        
+        # --- SELECTION LOGIC ---
+        active_signal = None
+        
+        # Case 1: Both exist
+        if sig1["code"] and sig2["code"]:
+            st.info("💡 Two Signals Found. Choose one to execute.")
+            choice = st.radio("Select Source:", [f"First Buy: {sig1['code']}", f"Next Buy: {sig2['code']}"])
+            if "First Buy" in choice: active_signal = sig1
+            else: active_signal = sig2
+            
+        # Case 2: Only Sig 1 exists
+        elif sig1["code"]:
+            active_signal = sig1
+            st.caption(f"Source: {active_signal['source']}")
+            
+        # Case 3: Only Sig 2 exists
+        elif sig2["code"]:
+            active_signal = sig2
+            st.caption(f"Source: {active_signal['source']}")
+            
+        # Render Form
+        if active_signal:
             with st.form("buy_form"):
-                confirmed_stock_code = st.text_input("Stock Code (Editable)", value=auto_stock_code)
+                # Editable Code
+                confirmed_stock_code = st.text_input("Stock Code (Editable)", value=active_signal["code"])
                 
-                try: q_val = int(float(auto_qty.replace(',','')))
+                # Qty
+                try: q_val = int(float(active_signal["qty"].replace(',','')))
                 except: q_val = 0
                 final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
                 
-                try: p_val = float(auto_price.replace(',',''))
+                # Price
+                try: p_val = float(active_signal["price"].replace(',',''))
                 except: p_val = 0.0
                 b_price = st.number_input("Exec Price", value=p_val, format="%.2f")
                 
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        # Get Template Row
                         raw_vals = h_ws.get('O6:T6')[0]
                         raw_vals[2] = confirmed_stock_code
                         raw_vals[4] = b_price
@@ -257,13 +261,8 @@ with c_buy:
                         st_ws.update_cell(ow_row, 11, b_price)
                         st_ws.update_cell(ow_row, 23, str(date.today()))
                         st.balloons(); st.success(f"Buy Saved for {confirmed_stock_code}!"); time.sleep(1); st.rerun()
-        else: 
+        else:
             st.info("Nothing to buy today. Come back tomorrow!")
-            # DEBUGGER
-            with st.expander("🔍 Debugging (Range Check)"):
-                st.write(f"Scanned Q2: {len(debug_info) > 0 and debug_info[0] or 'Blank'}")
-                st.write(f"Scanned Q5-Q11: {debug_info[1:]}")
-                st.write("Stopped before Q12 (Historical Data).")
 
 with c_sell:
     with st.container(border=True):
