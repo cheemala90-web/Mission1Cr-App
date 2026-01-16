@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V21", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V22", layout="wide")
 
 st.markdown("""
     <style>
@@ -73,45 +73,44 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE
+# 3. DATA ENGINE (AREA SEARCH)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
     h_ws, s_ws, st_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%")
     mp_ws = sh.worksheet("MONTHLY PERFORMANCE")
 
-    # Fetch Bulk Data for Stats
+    # Fetch Data
     h_data = h_ws.get_all_values()
     s_data = s_ws.get_all_values()
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
-
-    # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- V21: DIRECT CELL FETCH (NO INDEX GUESSING) ---
+    # --- V22: AREA SEARCH (P5 to T8) ---
     auto_stock_code = ""
     auto_qty = "0"
     
-    # Hum Google se seedha pooch rahe hain: "Q6 aur T6 mein kya hai?"
-    # Note: Using batch get for efficiency
+    # We fetch a block of cells around the target area
+    # Rows 5, 6, 7, 8 (Indices 4, 5, 6, 7)
+    # Cols P, Q, R, S, T
     try:
-        # Fetching Range Q6 to T6
-        direct_vals = h_ws.get('Q6:T6') # Returns a list of rows, e.g. [['NSE:INDIGO', ..., ..., '10']]
+        search_grid = h_ws.get('P5:T8') # Returns list of lists
         
-        if direct_vals and len(direct_vals) > 0 and len(direct_vals[0]) > 0:
-            q6_val = str(direct_vals[0][0]).strip() # First item is Q6
+        # Scan the grid
+        for row in search_grid:
+            for cell_val in row:
+                if "NSE:" in str(cell_val).upper():
+                    auto_stock_code = str(cell_val).strip()
+                    # Try to find quantity in the same row (Look for digits)
+                    for q_candidate in row:
+                        if str(q_candidate).strip().isdigit():
+                            auto_qty = str(q_candidate).strip()
+                    break # Break inner loop
+            if auto_stock_code: break # Break outer loop
             
-            # Check Valid
-            ignore = ["", "0", "0.00", "#N/A", "FALSE"]
-            if q6_val and q6_val.upper() not in ignore:
-                auto_stock_code = q6_val
-                
-                # Try to get T6 (which is index 3 in Q,R,S,T)
-                if len(direct_vals[0]) > 3:
-                    auto_qty = str(direct_vals[0][3]).strip()
     except Exception as e:
-        st.error(f"Read Error: {e}")
+        st.error(f"Grid Scan Error: {e}")
 
     # Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
@@ -203,26 +202,28 @@ with c_buy:
                 b_price = st.number_input("Exec Price", format="%.2f")
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        raw_vals = h_ws.get('O6:T6')[0] # Template
-                        # Overwrite with correct values
-                        raw_vals[2] = auto_stock_code 
+                        raw_vals = h_ws.get('O6:T6')[0]
+                        # Ensure we write NSE: prefix if missing
+                        write_stock = auto_stock_code
+                        if "NSE:" not in write_stock.upper() and "BSE:" not in write_stock.upper():
+                            write_stock = "NSE:" + write_stock
+                        
+                        raw_vals[2] = write_stock
                         raw_vals[4] = b_price      
                         raw_vals[5] = final_qty    
                         
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
-                        st_ws.update_cell(ow_row, 10, auto_stock_code); st_ws.update_cell(ow_row, 11, b_price); st_ws.update_cell(ow_row, 23, str(date.today()))
+                        st_ws.update_cell(ow_row, 10, write_stock); st_ws.update_cell(ow_row, 11, b_price); st_ws.update_cell(ow_row, 23, str(date.today()))
                         st.balloons(); st.success("Buy Saved!"); time.sleep(1); st.rerun()
         else: 
             st.info("Nothing to buy today.")
-            # DIAGNOSTIC TOOL
-            with st.expander("🔍 See What Code Sees"):
-                st.write("Fetching directly from cell **Q6**...")
+            # DIAGNOSTIC TOOL V2 (Visual Grid)
+            with st.expander("🔍 System Diagnostic"):
+                st.write("Scanning Area (P5 to T8):")
                 try:
-                    debug_val = h_ws.acell('Q6').value
-                    st.write(f"**Value in Q6:** '{debug_val}'")
-                    st.write(f"**Value in T6:** '{h_ws.acell('T6').value}'")
-                except:
-                    st.write("Could not read cell.")
+                    debug_grid = h_ws.get('P5:T8')
+                    st.table(debug_grid)
+                except: st.write("Error reading grid")
 
 with c_sell:
     with st.container(border=True):
