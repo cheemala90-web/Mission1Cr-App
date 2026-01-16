@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V19", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V21", layout="wide")
 
 st.markdown("""
     <style>
@@ -26,7 +26,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION (FAIL-SAFE)
+# 2. AUTHENTICATION
 # ==========================================
 MASTER_ID = "10SunpSW_j5ALESiX1mJweifCbgz2b9z7Q4El7k-J3Pk"
 
@@ -80,6 +80,7 @@ try:
     h_ws, s_ws, st_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%")
     mp_ws = sh.worksheet("MONTHLY PERFORMANCE")
 
+    # Fetch Bulk Data for Stats
     h_data = h_ws.get_all_values()
     s_data = s_ws.get_all_values()
     st_data = st_ws.get_all_values()
@@ -88,34 +89,29 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- SNIPER LOGIC V19 (STRICTLY Q6 & T6) ---
+    # --- V21: DIRECT CELL FETCH (NO INDEX GUESSING) ---
     auto_stock_code = ""
     auto_qty = "0"
     
-    # Hum seedha Row 6 (Index 5) uthayenge
-    if len(h_data) > 5:
-        row6 = h_data[5]
+    # Hum Google se seedha pooch rahe hain: "Q6 aur T6 mein kya hai?"
+    # Note: Using batch get for efficiency
+    try:
+        # Fetching Range Q6 to T6
+        direct_vals = h_ws.get('Q6:T6') # Returns a list of rows, e.g. [['NSE:INDIGO', ..., ..., '10']]
         
-        # TARGET 1: Column Q (Index 16) - Most Common
-        # TARGET 2: Column T (Index 19) - Quantity
-        
-        # Checking Q6 specifically
-        if len(row6) > 16:
-            q6_val = str(row6[16]).strip()
+        if direct_vals and len(direct_vals) > 0 and len(direct_vals[0]) > 0:
+            q6_val = str(direct_vals[0][0]).strip() # First item is Q6
             
-            if "NSE:" in q6_val.upper():
+            # Check Valid
+            ignore = ["", "0", "0.00", "#N/A", "FALSE"]
+            if q6_val and q6_val.upper() not in ignore:
                 auto_stock_code = q6_val
-                # Get Quantity from T6 (Index 19)
-                if len(row6) > 19:
-                    auto_qty = str(row6[19]).strip()
-            else:
-                # Agar Q6 khali hai, toh Column E (Index 4) check kar lete hain (Backup)
-                # Lekin aage nahi badhenge
-                if len(row6) > 4:
-                    e6_val = str(row6[4]).strip()
-                    if "NSE:" in e6_val.upper():
-                        auto_stock_code = e6_val
-                        if len(row6) > 5: auto_qty = str(row6[5]).strip()
+                
+                # Try to get T6 (which is index 3 in Q,R,S,T)
+                if len(direct_vals[0]) > 3:
+                    auto_qty = str(direct_vals[0][3]).strip()
+    except Exception as e:
+        st.error(f"Read Error: {e}")
 
     # Progress Logic
     k_vals = [r[10] if len(r) > 10 else "" for r in st_data[2:]]
@@ -188,8 +184,7 @@ for col, lbl, val, color_type in metrics:
 # 5. ACTION TERMINAL
 # ==========================================
 st.write("---")
-# STRICT CHECK: Must be non-empty and not just 0 or #N/A
-is_buy_active = auto_stock_code and auto_stock_code.strip() not in ["", "0", "#N/A", "0.00"] and "NSE:" in auto_stock_code
+is_buy_active = auto_stock_code != ""
 m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
 s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
 is_sell_active = s_idx is not None
@@ -208,12 +203,26 @@ with c_buy:
                 b_price = st.number_input("Exec Price", format="%.2f")
                 if st.form_submit_button("✅ EXECUTE BUY"):
                     with st.spinner("Saving..."):
-                        raw_vals = h_ws.get('O6:T6')[0]
-                        raw_vals[2], raw_vals[4], raw_vals[5] = auto_stock_code, b_price, final_qty
+                        raw_vals = h_ws.get('O6:T6')[0] # Template
+                        # Overwrite with correct values
+                        raw_vals[2] = auto_stock_code 
+                        raw_vals[4] = b_price      
+                        raw_vals[5] = final_qty    
+                        
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
                         st_ws.update_cell(ow_row, 10, auto_stock_code); st_ws.update_cell(ow_row, 11, b_price); st_ws.update_cell(ow_row, 23, str(date.today()))
                         st.balloons(); st.success("Buy Saved!"); time.sleep(1); st.rerun()
-        else: st.info("Nothing to buy today.")
+        else: 
+            st.info("Nothing to buy today.")
+            # DIAGNOSTIC TOOL
+            with st.expander("🔍 See What Code Sees"):
+                st.write("Fetching directly from cell **Q6**...")
+                try:
+                    debug_val = h_ws.acell('Q6').value
+                    st.write(f"**Value in Q6:** '{debug_val}'")
+                    st.write(f"**Value in T6:** '{h_ws.acell('T6').value}'")
+                except:
+                    st.write("Could not read cell.")
 
 with c_sell:
     with st.container(border=True):
