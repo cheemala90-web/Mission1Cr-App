@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V38", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V39", layout="wide")
 
 st.markdown("""
     <style>
@@ -74,7 +74,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V38: BEST GUESS PRE-FILL)
+# 3. DATA ENGINE (V39: Q2 -> Q4/Q5/Q6)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -89,41 +89,43 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- PRE-FILL LOGIC (NO STRICT CHECKS) ---
-    # Default Empty Values
+    # --- AUTO-FILL LOGIC ---
     fill_code = ""
     fill_qty = "0"
     fill_price = "0.00"
     source_msg = "Manual Mode"
     
-    # Priority 1: Check Q2 (First Buy)
-    found_in_q2 = False
+    found = False
+    
+    # 1. Check Q2 (Row 2, Index 1) -> FIRST BUY
     if len(h_data) > 1:
         r2 = h_data[1]
         if len(r2) > 16:
             val_q2 = str(r2[16]).strip()
-            # Loose Check: Is it not empty?
-            if val_q2 and val_q2 not in ["0", "#N/A", "FALSE"]:
+            if val_q2 and val_q2 not in ["0", "#N/A", "FALSE", ""]:
                 fill_code = val_q2
-                found_in_q2 = True
                 source_msg = "Auto-Filled from Q2"
-                # Get Qty/Price
-                if len(r2) > 18: fill_price = str(r2[18]).strip()
-                if len(r2) > 19: fill_qty = str(r2[19]).strip()
+                if len(r2) > 18: fill_price = str(r2[18]).strip() # S2
+                if len(r2) > 19: fill_qty = str(r2[19]).strip()   # T2
+                found = True
 
-    # Priority 2: Check C6 (Next Buy) - ONLY if Q2 was empty
-    if not found_in_q2 and len(h_data) > 5:
-        r6 = h_data[5]
-        # Column C is Index 2
-        if len(r6) > 2:
-            val_c6 = str(r6[2]).strip()
-            # Loose Check: Is it not empty?
-            if val_c6 and val_c6 not in ["0", "#N/A", "FALSE"]:
-                fill_code = val_c6
-                source_msg = "Auto-Filled from C6"
-                # Get Qty/Price (Assuming S6/T6 logic applies here too)
-                if len(r6) > 18: fill_price = str(r6[18]).strip()
-                if len(r6) > 19: fill_qty = str(r6[19]).strip()
+    # 2. Check Q4, Q5, Q6 (Rows 4-6) -> NEXT BUY
+    # Only if Q2 is empty
+    if not found and len(h_data) > 5:
+        # Scan Rows 4, 5, 6 (Indices 3, 4, 5)
+        search_range = h_data[3:6]
+        
+        for i, row in enumerate(search_range):
+            curr_row_num = i + 4 # 4, 5, 6
+            if len(row) > 16:
+                val_q = str(row[16]).strip()
+                if val_q and val_q not in ["0", "#N/A", "FALSE", ""]:
+                    fill_code = val_q
+                    source_msg = f"Auto-Filled from Q{curr_row_num}"
+                    if len(row) > 18: fill_price = str(row[18]).strip()
+                    if len(row) > 19: fill_qty = str(row[19]).strip()
+                    found = True
+                    break
 
     # --- DYNAMIC TOTAL STEPS ---
     total_steps_list = [r[0] for r in st_data[2:] if len(r) > 0 and r[0].strip() != ""]
@@ -216,27 +218,21 @@ with c_buy:
     with st.container(border=True):
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
         
-        # Display Source Info
         if fill_code:
             st.caption(f"✅ {source_msg}")
         else:
             st.caption("ℹ️ Standard Mode (Enter details manually if blank)")
 
-        # --- EXECUTE FORM (Always Visible) ---
         with st.form("buy_form"):
-            # Stock Code with Auto-Fill (if any)
             confirmed_stock_code = st.text_input("Stock Code", value=fill_code, placeholder="Ex: NSE:INDIGO")
             
-            # Helper text for format
             if not fill_code:
                 st.caption("Tip: Use format NSE:STOCKNAME")
 
-            # Qty Auto-Fill
             try: q_val = int(float(fill_qty.replace(',','')))
             except: q_val = 0
             final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
             
-            # Price Auto-Fill
             try: p_val = float(fill_price.replace(',',''))
             except: p_val = 0.0
             b_price = st.number_input("Exec Price", value=p_val, format="%.2f")
@@ -246,12 +242,9 @@ with c_buy:
                     st.error("❌ Stock Code cannot be empty!")
                 else:
                     with st.spinner("Saving..."):
-                        # Get Template Row (Standard Write Location)
                         raw_vals = h_ws.get('O6:T6')[0]
-                        # Clean up formatting issues
                         stock_write = confirmed_stock_code.strip()
                         if "NSE:" not in stock_write.upper() and "BSE:" not in stock_write.upper():
-                            # Auto-add NSE: if missing (Helpful feature)
                             stock_write = "NSE:" + stock_write
                             
                         raw_vals[2] = stock_write
