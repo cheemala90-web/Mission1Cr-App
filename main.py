@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V37", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V38", layout="wide")
 
 st.markdown("""
     <style>
@@ -74,7 +74,7 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V37: FORMAT GUIDANCE)
+# 3. DATA ENGINE (V38: BEST GUESS PRE-FILL)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
@@ -89,30 +89,41 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- DUAL SIGNAL LOGIC ---
-    sig1 = {"code": None, "price": "0.00", "qty": "0", "source": "First Buy (Q2)"}
-    sig2 = {"code": None, "price": "0.00", "qty": "0", "source": "Next Buy (C6)"}
+    # --- PRE-FILL LOGIC (NO STRICT CHECKS) ---
+    # Default Empty Values
+    fill_code = ""
+    fill_qty = "0"
+    fill_price = "0.00"
+    source_msg = "Manual Mode"
     
-    # 1. CHECK Q2 (Row 2, Index 1)
+    # Priority 1: Check Q2 (First Buy)
+    found_in_q2 = False
     if len(h_data) > 1:
         r2 = h_data[1]
         if len(r2) > 16:
-            val = str(r2[16]).strip() # Q2
-            if val and ("NSE:" in val.upper() or "BSE:" in val.upper()):
-                sig1["code"] = val
-                if len(r2) > 18: sig1["price"] = str(r2[18]).strip() # S2
-                if len(r2) > 19: sig1["qty"] = str(r2[19]).strip()   # T2
+            val_q2 = str(r2[16]).strip()
+            # Loose Check: Is it not empty?
+            if val_q2 and val_q2 not in ["0", "#N/A", "FALSE"]:
+                fill_code = val_q2
+                found_in_q2 = True
+                source_msg = "Auto-Filled from Q2"
+                # Get Qty/Price
+                if len(r2) > 18: fill_price = str(r2[18]).strip()
+                if len(r2) > 19: fill_qty = str(r2[19]).strip()
 
-    # 2. CHECK C6 (Row 6, Index 5)
-    if len(h_data) > 5:
+    # Priority 2: Check C6 (Next Buy) - ONLY if Q2 was empty
+    if not found_in_q2 and len(h_data) > 5:
         r6 = h_data[5]
         # Column C is Index 2
         if len(r6) > 2:
-            val = str(r6[2]).strip() # C6
-            if val and ("NSE:" in val.upper() or "BSE:" in val.upper()):
-                sig2["code"] = val
-                if len(r6) > 18: sig2["price"] = str(r6[18]).strip() # S6
-                if len(r6) > 19: sig2["qty"] = str(r6[19]).strip()   # T6
+            val_c6 = str(r6[2]).strip()
+            # Loose Check: Is it not empty?
+            if val_c6 and val_c6 not in ["0", "#N/A", "FALSE"]:
+                fill_code = val_c6
+                source_msg = "Auto-Filled from C6"
+                # Get Qty/Price (Assuming S6/T6 logic applies here too)
+                if len(r6) > 18: fill_price = str(r6[18]).strip()
+                if len(r6) > 19: fill_qty = str(r6[19]).strip()
 
     # --- DYNAMIC TOTAL STEPS ---
     total_steps_list = [r[0] for r in st_data[2:] if len(r) > 0 and r[0].strip() != ""]
@@ -205,45 +216,28 @@ with c_buy:
     with st.container(border=True):
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
         
-        active_signal = None
-        
-        # --- SELECTOR LOGIC ---
-        # Case 1: Multiple Signals
-        if sig1["code"] and sig2["code"]:
-            st.info("💡 Auto-Detected multiple signals.")
-            choice = st.radio("Select Source:", [f"First Buy (Q2): {sig1['code']}", f"Next Buy (C6): {sig2['code']}"])
-            if "Q2" in choice: active_signal = sig1
-            else: active_signal = sig2
-            
-        # Case 2: Only Q2
-        elif sig1["code"]:
-            active_signal = sig1
-            st.caption(f"✅ Auto-Filled Source: {active_signal['source']}")
-            
-        # Case 3: Only C6
-        elif sig2["code"]:
-            active_signal = sig2
-            st.caption(f"✅ Auto-Filled Source: {active_signal['source']}")
-        
-        # Case 4: Manual Mode
+        # Display Source Info
+        if fill_code:
+            st.caption(f"✅ {source_msg}")
         else:
-            active_signal = {"code": "", "price": "0.00", "qty": "0", "source": "Manual Entry"}
-            st.warning("⚠️ No Signal Detected. Check Sheet or Enter Manually.")
+            st.caption("ℹ️ Standard Mode (Enter details manually if blank)")
 
-        # --- EXECUTE FORM ---
+        # --- EXECUTE FORM (Always Visible) ---
         with st.form("buy_form"):
-            # Stock Code with Placeholder for Guidance
-            confirmed_stock_code = st.text_input("Stock Code", value=active_signal["code"], placeholder="Ex: NSE:INDIGO")
+            # Stock Code with Auto-Fill (if any)
+            confirmed_stock_code = st.text_input("Stock Code", value=fill_code, placeholder="Ex: NSE:INDIGO")
             
-            # Helper text
-            if active_signal["code"] == "":
-                st.caption("Format Example: NSE:TATASTEEL or BSE:RELIANCE")
+            # Helper text for format
+            if not fill_code:
+                st.caption("Tip: Use format NSE:STOCKNAME")
 
-            try: q_val = int(float(active_signal["qty"].replace(',','')))
+            # Qty Auto-Fill
+            try: q_val = int(float(fill_qty.replace(',','')))
             except: q_val = 0
             final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
             
-            try: p_val = float(active_signal["price"].replace(',',''))
+            # Price Auto-Fill
+            try: p_val = float(fill_price.replace(',',''))
             except: p_val = 0.0
             b_price = st.number_input("Exec Price", value=p_val, format="%.2f")
             
@@ -254,15 +248,21 @@ with c_buy:
                     with st.spinner("Saving..."):
                         # Get Template Row (Standard Write Location)
                         raw_vals = h_ws.get('O6:T6')[0]
-                        raw_vals[2] = confirmed_stock_code
+                        # Clean up formatting issues
+                        stock_write = confirmed_stock_code.strip()
+                        if "NSE:" not in stock_write.upper() and "BSE:" not in stock_write.upper():
+                            # Auto-add NSE: if missing (Helpful feature)
+                            stock_write = "NSE:" + stock_write
+                            
+                        raw_vals[2] = stock_write
                         raw_vals[4] = b_price
                         raw_vals[5] = final_qty
                         
                         h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
-                        st_ws.update_cell(ow_row, 10, confirmed_stock_code)
+                        st_ws.update_cell(ow_row, 10, stock_write)
                         st_ws.update_cell(ow_row, 11, b_price)
                         st_ws.update_cell(ow_row, 23, str(date.today()))
-                        st.balloons(); st.success(f"Buy Saved for {confirmed_stock_code}!"); time.sleep(1); st.rerun()
+                        st.balloons(); st.success(f"Buy Saved for {stock_write}!"); time.sleep(1); st.rerun()
 
 with c_sell:
     with st.container(border=True):
