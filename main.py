@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V47", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V49", layout="wide")
 
 st.markdown("""
     <style>
@@ -78,15 +78,10 @@ if not st.session_state.auth:
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
-    try: r_ws = sh.worksheet("RAW")
-    except: r_ws = None
-    
     h_ws, s_ws, st_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%")
     mp_ws = sh.worksheet("MONTHLY PERFORMANCE")
 
     h_data = h_ws.get_all_values()
-    r_data = r_ws.get_all_values() if r_ws else []
-    
     s_data = s_ws.get_all_values()
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
@@ -94,7 +89,7 @@ try:
     # Core Data
     equity_bal = h_data[5][0] if len(h_data) > 5 else "0"
     
-    # --- AUTO-FILL LOGIC ---
+    # --- AUTO-FILL LOGIC (STRICTLY Q4, Q5, Q6, Q7) ---
     fill_code = ""
     fill_qty = "0"
     fill_price = "0.00"
@@ -105,62 +100,42 @@ try:
     def looks_like_stock(val):
         v = str(val).strip().upper()
         # Filter garbage
-        invalid = ["", "0", "FALSE", "#N/A", "TRUE", "STOCK", "CODE", "QTY", "PRICE", "LTP", "CMP", "TARGET", "SL", "Buy", "Sell"]
+        invalid = ["", "0", "FALSE", "#N/A", "TRUE", "STOCK", "CODE", "QTY", "PRICE", "LTP", "CMP", "TARGET", "SL", "BUY", "SELL", "ELIGIBLE", "NO ELIGIBLE ETF"]
         if v in invalid: return False
+        if "ELIGIBLE" in v: return False
         if len(v) < 2: return False 
         if v.replace('.','').isdigit(): return False 
         return True
 
-    # --- LAYER 1: CHECK HOLDING (Priority: Q6, Q5, Q7, Q4, Q8) ---
-    priority_indices = [5, 4, 6, 3, 7] 
+    # --- THE SCANNER ---
+    # Indices: Row 4=3, Row 5=4, Row 6=5, Row 7=6
+    # We scan strictly in this list. No Q2. No RAW Sheet.
+    target_indices = [3, 4, 5, 6] 
     
-    for idx in priority_indices:
+    for idx in target_indices:
         if len(h_data) > idx:
             row = h_data[idx]
+            # Column Q is Index 16
             if len(row) > 16:
                 val_q = str(row[16]).strip()
+                
                 if looks_like_stock(val_q):
                     fill_code = val_q
                     if "NSE:" not in fill_code.upper() and "BSE:" not in fill_code.upper():
                         fill_code = "NSE:" + fill_code
                         
-                    source_msg = f"Auto-Filled from HOLDING (Q{idx+1})"
+                    source_msg = f"Auto-Filled from Q{idx+1}"
+                    
+                    # S column (Price) is Index 18
                     if len(row) > 18: fill_price = str(row[18]).strip()
+                    # T column (Qty) is Index 19
                     if len(row) > 19: fill_qty = str(row[19]).strip()
+                    
                     found = True
-                    break
+                    break # Stop at the first valid find
     
-    # --- LAYER 2: CHECK RAW SHEET ---
-    if not found and r_data:
-        scan_limit = min(len(r_data), 25)
-        # Priority 1: Explicit NSE/BSE
-        for r_idx, row in enumerate(r_data[:scan_limit]):
-            for c_idx, cell_val in enumerate(row[:8]): 
-                val_str = str(cell_val).strip().upper()
-                if ("NSE:" in val_str or "BSE:" in val_str) and len(val_str) < 30:
-                    fill_code = val_str
-                    source_msg = f"Auto-Filled from RAW (Row {r_idx+1})"
-                    for offset in range(1, 4):
-                        if c_idx + offset < len(row):
-                            possible_price = str(row[c_idx + offset]).strip()
-                            if possible_price.replace('.','').replace(',','').isdigit():
-                                fill_price = possible_price
-                                break
-                    found = True
-                    break
-            if found: break
-            
-        # Priority 2: Guessing stock name
-        if not found:
-             for r_idx, row in enumerate(r_data[:scan_limit]):
-                for c_idx, cell_val in enumerate(row[:8]):
-                    val_str = str(cell_val).strip()
-                    if looks_like_stock(val_str) and val_str.isupper() and len(val_str) > 2:
-                        fill_code = "NSE:" + val_str
-                        source_msg = f"Auto-Filled from RAW (Guess) (Row {r_idx+1})"
-                        found = True
-                        break
-                if found: break
+    # --- NO RAW SHEET FALLBACK ---
+    # Code ends search here.
 
     # --- DYNAMIC TOTAL STEPS ---
     total_steps_list = [r[0] for r in st_data[2:] if len(r) > 0 and r[0].strip() != ""]
@@ -212,7 +187,6 @@ except Exception as e:
 # ==========================================
 st.markdown(f'<div class="header-box"><h1>🚀 MISSION 1 CR | {st.session_state.name.upper()}</h1></div>', unsafe_allow_html=True)
 
-# FIXED: Removed f-string triple quotes and used format to avoid Syntax Errors
 html_template = """
     <div class="prog-container">
         <div style="display:flex; justify-content:space-between; font-weight:bold; color:#555; margin-bottom:10px;">
@@ -284,6 +258,7 @@ with c_buy:
                         if "NSE:" not in stock_write.upper() and "BSE:" not in stock_write.upper():
                             stock_write = "NSE:" + stock_write
                             
+                        # Use standard write location (Row 6 fixed for template)
                         raw_vals[2] = stock_write
                         raw_vals[4] = b_price
                         raw_vals[5] = final_qty
