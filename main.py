@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V41", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V46", layout="wide")
 
 st.markdown("""
     <style>
@@ -74,11 +74,10 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V41: NO Q2 | SCAN Q4-Q7 | RAW BACKUP)
+# 3. DATA ENGINE (V46: SKIP Q2 | TARGET Q6)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
-    # Load RAW sheet as well
     try: r_ws = sh.worksheet("RAW")
     except: r_ws = None
     
@@ -103,35 +102,73 @@ try:
     
     found = False
     
-    # --- LAYER 1: CHECK HOLDING -> Q4, Q5, Q6, Q7 ---
-    # Rows 4 to 7 are indices 3, 4, 5, 6
-    if len(h_data) > 6:
-        search_range = h_data[3:7] # Slices indices 3, 4, 5, 6
-        for i, row in enumerate(search_range):
+    # Validation Helper
+    def looks_like_stock(val):
+        v = str(val).strip().upper()
+        # Filter garbage
+        invalid = ["", "0", "FALSE", "#N/A", "TRUE", "STOCK", "CODE", "QTY", "PRICE", "LTP", "CMP", "TARGET", "SL", "Buy", "Sell"]
+        if v in invalid: return False
+        if len(v) < 2: return False 
+        # Must have at least one letter (avoids pure numbers unless ETF specific)
+        if v.replace('.','').isdigit(): return False 
+        return True
+
+    # --- LAYER 1: CHECK HOLDING (Strictly Rows 4-8) ---
+    # Indices: Row 6=5, Row 5=4, Row 7=6, Row 4=3, Row 8=7
+    # Note: Row 2 (Index 1) is NOT in this list.
+    priority_indices = [5, 4, 6, 3, 7] 
+    
+    for idx in priority_indices:
+        if len(h_data) > idx:
+            row = h_data[idx]
             if len(row) > 16:
                 val_q = str(row[16]).strip()
-                # Check if valid Stock Code
-                if val_q and val_q not in ["0", "#N/A", "FALSE", ""]:
+                
+                if looks_like_stock(val_q):
                     fill_code = val_q
-                    source_msg = f"Auto-Filled from HOLDING (Q{i+4})"
+                    # Auto-Fix Prefix
+                    if "NSE:" not in fill_code.upper() and "BSE:" not in fill_code.upper():
+                        fill_code = "NSE:" + fill_code
+                        
+                    source_msg = f"Auto-Filled from HOLDING (Q{idx+1})"
+                    
                     if len(row) > 18: fill_price = str(row[18]).strip()
                     if len(row) > 19: fill_qty = str(row[19]).strip()
                     found = True
                     break
     
-    # --- LAYER 2: CHECK RAW SHEET -> C6 to C12 (Backup) ---
-    if not found and r_data and len(r_data) > 5:
-        # Scan Column C (Index 2) in RAW sheet from Row 6 to 12
-        raw_search = r_data[3:12] 
-        for i, row in enumerate(raw_search):
-            if len(row) > 2:
-                val_c = str(row[2]).strip() 
-                if val_c and ("NSE:" in val_c.upper() or "BSE:" in val_c.upper()):
-                    fill_code = val_c
-                    source_msg = f"Auto-Filled from RAW (C{i+4})"
-                    if len(row) > 4: fill_price = str(row[4]).strip()
+    # --- LAYER 2: CHECK RAW SHEET (Hunter Mode) ---
+    if not found and r_data:
+        scan_limit = min(len(r_data), 25)
+        
+        # Priority 1: Explicit NSE/BSE
+        for r_idx, row in enumerate(r_data[:scan_limit]):
+            for c_idx, cell_val in enumerate(row[:8]): 
+                val_str = str(cell_val).strip().upper()
+                if ("NSE:" in val_str or "BSE:" in val_str) and len(val_str) < 30:
+                    fill_code = val_str
+                    source_msg = f"Auto-Filled from RAW (Row {r_idx+1})"
+                    for offset in range(1, 4):
+                        if c_idx + offset < len(row):
+                            possible_price = str(row[c_idx + offset]).strip()
+                            if possible_price.replace('.','').replace(',','').isdigit():
+                                fill_price = possible_price
+                                break
                     found = True
                     break
+            if found: break
+            
+        # Priority 2: Guessing stock name
+        if not found:
+             for r_idx, row in enumerate(r_data[:scan_limit]):
+                for c_idx, cell_val in enumerate(row[:8]):
+                    val_str = str(cell_val).strip()
+                    if looks_like_stock(val_str) and val_str.isupper() and len(val_str) > 2:
+                        fill_code = "NSE:" + val_str
+                        source_msg = f"Auto-Filled from RAW (Guess) (Row {r_idx+1})"
+                        found = True
+                        break
+                if found: break
 
     # --- DYNAMIC TOTAL STEPS ---
     total_steps_list = [r[0] for r in st_data[2:] if len(r) > 0 and r[0].strip() != ""]
@@ -194,92 +231,4 @@ st.markdown(f"""
                 Done: {progress_count} / {TOTAL_STEPS} | ₹ {equity_bal}
             </div>
         </div>
-        <div style="text-align:center; margin-top:5px; font-size:12px; color:#666;">
-            Total Roadmap Length: <b>{TOTAL_STEPS} Steps</b>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
-
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-p_row = mp_data[1] if len(mp_data) > 1 else []
-metrics = [(c1, "Steps Completed", f"{sold_steps_count} / {TOTAL_STEPS}", "green"), (c2, "AI Time Left", time_display, "blue"), (c3, "Monthly P%", p_row[3] if len(p_row)>3 else "0%", "blue"), (c4, "Remaining Steps", remaining_steps, "red"), (c5, "Pocket %", p_row[5] if len(p_row)>5 else "0%", "blue"), (c6, "Annualized", p_row[6] if len(p_row)>6 else "0%", "blue")]
-
-for col, lbl, val, color_type in metrics:
-    color = "#2ea043" if color_type == "green" else ("#d93025" if color_type == "red" else "#003366")
-    sub = speed_text if lbl == "AI Time Left" else ""
-    col.markdown(f'<div class="stats-card"><span class="stats-lbl">{lbl}</span><br><span class="stats-val" style="color:{color}">{val}</span><span class="stats-sub">{sub}</span></div>', unsafe_allow_html=True)
-
-# ==========================================
-# 5. ACTION TERMINAL
-# ==========================================
-st.write("---")
-
-m_check = [row[12] if len(row) > 12 else "" for row in h_data[11:]] 
-s_idx = next((i + 12 for i, v in enumerate(m_check) if v.strip()), None)
-is_sell_active = s_idx is not None
-
-c_buy, c_sell = st.columns(2)
-
-with c_buy:
-    with st.container(border=True):
-        st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
-        
-        # Display Source Info
-        if fill_code:
-            st.success(f"✅ {source_msg}")
-        else:
-            st.caption("ℹ️ Manual Mode (Enter details manually)")
-
-        with st.form("buy_form"):
-            confirmed_stock_code = st.text_input("Stock Code", value=fill_code, placeholder="Ex: NSE:INDIGO")
-            
-            if not fill_code:
-                st.caption("Tip: Use format NSE:STOCKNAME")
-
-            try: q_val = int(float(fill_qty.replace(',','')))
-            except: q_val = 0
-            final_qty = st.number_input("Confirm Qty", value=q_val, step=1)
-            
-            try: p_val = float(fill_price.replace(',',''))
-            except: p_val = 0.0
-            b_price = st.number_input("Exec Price", value=p_val, format="%.2f")
-            
-            if st.form_submit_button("✅ EXECUTE BUY"):
-                if not confirmed_stock_code.strip():
-                    st.error("❌ Stock Code cannot be empty!")
-                else:
-                    with st.spinner("Saving..."):
-                        # Get Template Row (Standard Write Location)
-                        raw_vals = h_ws.get('O6:T6')[0]
-                        stock_write = confirmed_stock_code.strip()
-                        if "NSE:" not in stock_write.upper() and "BSE:" not in stock_write.upper():
-                            stock_write = "NSE:" + stock_write
-                            
-                        raw_vals[2] = stock_write
-                        raw_vals[4] = b_price
-                        raw_vals[5] = final_qty
-                        
-                        h_ws.update(f'A{h_target_row}:F{h_target_row}', [raw_vals], value_input_option='USER_ENTERED')
-                        st_ws.update_cell(ow_row, 10, stock_write)
-                        st_ws.update_cell(ow_row, 11, b_price)
-                        st_ws.update_cell(ow_row, 23, str(date.today()))
-                        st.balloons(); st.success(f"Buy Saved for {stock_write}!"); time.sleep(1); st.rerun()
-
-with c_sell:
-    with st.container(border=True):
-        st.markdown(f"<h3 style='color:#d93025; margin-top:0; text-align:center;'>🔻 SELL TASK</h3>", unsafe_allow_html=True)
-        if is_sell_active:
-            row_data = h_data[s_idx-1]
-            try: display_qty = int(float(row_data[7])) if len(row_data) > 7 else 0
-            except: display_qty = 0
-            with st.form("sell_form"):
-                st.markdown(f"**Stock:** {row_data[2] if len(row_data) > 2 else ''}"); st.markdown(f"**Holding:** {display_qty}")
-                s_price = st.number_input("Sell Price", format="%.2f")
-                if st.form_submit_button("🚨 BOOK PROFIT"):
-                    with st.spinner("Booking..."):
-                        live_row = h_ws.row_values(s_idx)[:14]; live_row[11] = s_price
-                        s_ws.append_row(live_row, value_input_option='USER_ENTERED'); h_ws.delete_rows(s_idx)
-                        st.balloons(); st.success("Profit Booked!"); time.sleep(1); st.rerun()
-        else: st.info("No Active Sells. Hold your positions.")
-
-st.caption(f"Terminal Active | User: {st.session_state.name}")
+        <div style="text-align:
