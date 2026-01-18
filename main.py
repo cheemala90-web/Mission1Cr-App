@@ -8,7 +8,7 @@ import json
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
 # ==========================================
-st.set_page_config(page_title="Mission 1 Cr | Live V39", layout="wide")
+st.set_page_config(page_title="Mission 1 Cr | Live V41", layout="wide")
 
 st.markdown("""
     <style>
@@ -74,14 +74,20 @@ if not st.session_state.auth:
     st.stop()
 
 # ==========================================
-# 3. DATA ENGINE (V39: Q2 -> Q4/Q5/Q6)
+# 3. DATA ENGINE (V41: NO Q2 | SCAN Q4-Q7 | RAW BACKUP)
 # ==========================================
 try:
     sh = gc.open_by_key(st.session_state.sid)
+    # Load RAW sheet as well
+    try: r_ws = sh.worksheet("RAW")
+    except: r_ws = None
+    
     h_ws, s_ws, st_ws = sh.worksheet("HOLDING"), sh.worksheet("SOLD"), sh.worksheet("TRADING STEPS 3%")
     mp_ws = sh.worksheet("MONTHLY PERFORMANCE")
 
     h_data = h_ws.get_all_values()
+    r_data = r_ws.get_all_values() if r_ws else []
+    
     s_data = s_ws.get_all_values()
     st_data = st_ws.get_all_values()
     mp_data = mp_ws.get_all_values()
@@ -97,33 +103,33 @@ try:
     
     found = False
     
-    # 1. Check Q2 (Row 2, Index 1) -> FIRST BUY
-    if len(h_data) > 1:
-        r2 = h_data[1]
-        if len(r2) > 16:
-            val_q2 = str(r2[16]).strip()
-            if val_q2 and val_q2 not in ["0", "#N/A", "FALSE", ""]:
-                fill_code = val_q2
-                source_msg = "Auto-Filled from Q2"
-                if len(r2) > 18: fill_price = str(r2[18]).strip() # S2
-                if len(r2) > 19: fill_qty = str(r2[19]).strip()   # T2
-                found = True
-
-    # 2. Check Q4, Q5, Q6 (Rows 4-6) -> NEXT BUY
-    # Only if Q2 is empty
-    if not found and len(h_data) > 5:
-        # Scan Rows 4, 5, 6 (Indices 3, 4, 5)
-        search_range = h_data[3:6]
-        
+    # --- LAYER 1: CHECK HOLDING -> Q4, Q5, Q6, Q7 ---
+    # Rows 4 to 7 are indices 3, 4, 5, 6
+    if len(h_data) > 6:
+        search_range = h_data[3:7] # Slices indices 3, 4, 5, 6
         for i, row in enumerate(search_range):
-            curr_row_num = i + 4 # 4, 5, 6
             if len(row) > 16:
                 val_q = str(row[16]).strip()
+                # Check if valid Stock Code
                 if val_q and val_q not in ["0", "#N/A", "FALSE", ""]:
                     fill_code = val_q
-                    source_msg = f"Auto-Filled from Q{curr_row_num}"
+                    source_msg = f"Auto-Filled from HOLDING (Q{i+4})"
                     if len(row) > 18: fill_price = str(row[18]).strip()
                     if len(row) > 19: fill_qty = str(row[19]).strip()
+                    found = True
+                    break
+    
+    # --- LAYER 2: CHECK RAW SHEET -> C6 to C12 (Backup) ---
+    if not found and r_data and len(r_data) > 5:
+        # Scan Column C (Index 2) in RAW sheet from Row 6 to 12
+        raw_search = r_data[3:12] 
+        for i, row in enumerate(raw_search):
+            if len(row) > 2:
+                val_c = str(row[2]).strip() 
+                if val_c and ("NSE:" in val_c.upper() or "BSE:" in val_c.upper()):
+                    fill_code = val_c
+                    source_msg = f"Auto-Filled from RAW (C{i+4})"
+                    if len(row) > 4: fill_price = str(row[4]).strip()
                     found = True
                     break
 
@@ -218,10 +224,11 @@ with c_buy:
     with st.container(border=True):
         st.markdown(f"<h3 style='color:#2ea043; margin-top:0; text-align:center;'>⚡ BUY TASK</h3>", unsafe_allow_html=True)
         
+        # Display Source Info
         if fill_code:
-            st.caption(f"✅ {source_msg}")
+            st.success(f"✅ {source_msg}")
         else:
-            st.caption("ℹ️ Standard Mode (Enter details manually if blank)")
+            st.caption("ℹ️ Manual Mode (Enter details manually)")
 
         with st.form("buy_form"):
             confirmed_stock_code = st.text_input("Stock Code", value=fill_code, placeholder="Ex: NSE:INDIGO")
@@ -242,6 +249,7 @@ with c_buy:
                     st.error("❌ Stock Code cannot be empty!")
                 else:
                     with st.spinner("Saving..."):
+                        # Get Template Row (Standard Write Location)
                         raw_vals = h_ws.get('O6:T6')[0]
                         stock_write = confirmed_stock_code.strip()
                         if "NSE:" not in stock_write.upper() and "BSE:" not in stock_write.upper():
